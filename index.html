@@ -154,7 +154,7 @@ let MAT="porcelan", MODE=null, PRODIM_PIECES=null;
 
 /* ---- מנוע ה-PDF/DXF (Render) ---- */
 const ENGINE="https://stone-ai-engine.onrender.com";
-function dlB64(name,b64,mime){const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);const blob=new Blob([arr],{type:mime});const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},1500);}
+function dlB64(name,b64,mime){const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);saveFile(name,new Blob([arr],{type:mime}));}
 async function engineResult(container,payload,isProdim,file){
   container.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">מפיק PDF מקצועי + DXF למכונה. בפעם הראשונה זה עלול לקחת עד דקה (השרת מתעורר).</div></div>';
   try{
@@ -384,20 +384,23 @@ function genPDF(title,pieces,mat,res){
     if(navigator.canShare({files:[file]})){navigator.share({files:[file],title:name}).catch(()=>fallbackDL(blob,name));return;}}
   fallbackDL(blob,name);
 }
-function download(name,text){
+function saveFile(name,blob){
+  // iOS/ספארי: קודם "שיתוף" (הכי אמין לשמירת קובץ), אחרת הורדה רגילה
   try{
-    const blob=new Blob([text],{type:"application/octet-stream"});
-    // iOS/Safari: use Web Share sheet if available (reliable for files)
     if(navigator.canShare){
-      const file=new File([blob],name,{type:"application/octet-stream"});
-      if(navigator.canShare({files:[file]})){ navigator.share({files:[file],title:name}).catch(()=>fallbackDL(blob,name)); return; }
+      const file=new File([blob],name,{type:blob.type||"application/octet-stream"});
+      if(navigator.canShare({files:[file]})){ navigator.share({files:[file]}).catch(()=>fallbackDL(blob,name)); return; }
     }
-    fallbackDL(blob,name);
-  }catch(e){ alert("שגיאה בהורדה: "+e.message); }
+  }catch(e){}
+  fallbackDL(blob,name);
+}
+function download(name,text){
+  try{ saveFile(name,new Blob([text],{type:"application/dxf"})); }
+  catch(e){ alert("שגיאה בהורדה: "+e.message); }
 }
 function fallbackDL(blob,name){
   const u=URL.createObjectURL(blob),a=document.createElement("a");
-  a.href=u;a.download=name;a.rel="noopener";a.target="_blank";
+  a.href=u;a.download=name;a.rel="noopener";
   document.body.appendChild(a);a.click();
   setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(u);},1500);
 }
