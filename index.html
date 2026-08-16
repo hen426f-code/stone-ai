@@ -522,44 +522,95 @@ async function sendChat(){
 async function readVision(){
   const f=document.getElementById("upFile").files[0];if(!f)return;
   const info=document.getElementById("upInfo");
-  info.textContent="קורא מידות מהקובץ… (כמה שניות)";
+  info.innerHTML='<div class="info">קורא את השרטוט… (עד דקה)</div>';
   const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(f);});
   const isPDF=f.type==="application/pdf"||f.name.toLowerCase().endsWith(".pdf");
   const block=isPDF?{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}}
                    :{type:"image",source:{type:"base64",media_type:f.type||"image/jpeg",data:b64}};
-  const prompt='זהו שרטוט מטבח אבן. קרא את הצורה והחזר אך ורק JSON תקין (בלי טקסט נוסף). קודם קבע את הצורה: "L" = שתי צלעות בלבד (צלע ארוכה + זרוע); "U" = שלוש צלעות; "other" = כל דבר אחר (כולל חיפויים/חתיכות נפרדות רבות). מבנה: {"shape":"L"|"U"|"other","long_cm":מספר,"arm_cm":מספר,"depth_cm":מספר,"arm_side":"left"|"right","sink":{"fromRight":מספר,"w":מספר,"h":מספר,"fromFront":מספר}|null,"gas":{"fromRight":מספר,"w":מספר,"h":מספר,"fromFront":מספר}|null}. חשוב: אל תמציא מידות — אם לא בטוח בערך השתמש ב-null. מלא long/arm/depth רק אם shape="L".';
+  const prompt=[
+'זהו שרטוט חיתוך שיש בכתב יד. חלץ ממנו את כל החתיכות והחזר אך ורק JSON תקין, בלי שום טקסט נוסף.',
+'כללי קריאה (חשוב מאוד):',
+'1) המטבח עצמו: לרוב צורת L — צלע אחת אופקית וצלע/רגל שמתחברת אליה. לכל צלע יש אורך (יכול להיות סכום של כמה מספרים לאורכה, למשל 113.5+156=269.5) ועומק משלה. שים לב: לעומק של כל צלע יכול להיות ערך שונה.',
+'2) ציפוי קיר: חתיכות מלבניות נפרדות (בדרך כלל בחלק התחתון של הדף) שאינן חלק מהמטבח. אם רשומה להן רק מידה אחת — המספר הגדול הוא האורך והקטן הוא העומק.',
+'3) פתחים (כיור/גז/שקע): רשום פתח רק אם כתובות במפורש מידות רוחב וגובה. אם אין מידה מפורשת — אל תרשום את הפתח בכלל.',
+'4) סימן של שני קווים קצרים מקבילים (‖) פירושו עיבוד חזית על אותה צלע.',
+'5) אל תמציא מספרים. אם ערך לא ברור או חסר — השתמש ב-null ורשום שאלה בשדה questions.',
+'מבנה ה-JSON:',
+'{"job":"שם העבודה אם כתוב או null",',
+' "kitchen":[{"label":"צלע עליונה","len":מספר|null,"depth":מספר|null,"openings":[{"kind":"כיור|גז|שקע","from_left_cm":מספר,"from_front_cm":מספר,"w":מספר,"h":מספר}]}],',
+' "cladding":[{"label":"ציפוי קיר","len":מספר|null,"depth":מספר|null}],',
+' "questions":["שאלה קצרה בעברית על כל דבר שלא היה ברור"]}'
+].join("\n");
   try{
     const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({max_tokens:600,messages:[{role:"user",content:[block,{type:"text",text:prompt}]}]})});
+      body:JSON.stringify({max_tokens:1600,messages:[{role:"user",content:[block,{type:"text",text:prompt}]}]})});
     const data=await res.json();
     if(!res.ok||data.error)throw new Error(data.message||data.error);
-    const j=JSON.parse((data.text||"").replace(/```json|```/g,"").trim());
-    // אימות: רק מטבח L עם מידות הגיוניות עובר אוטומטית
-    const ok = (v)=>typeof v==="number" && v>1 && v<2000;
-    if(j.shape && j.shape!=="L"){
-      info.innerHTML='זוהה מטבח מסוג <b>'+(j.shape==="U"?"U (שלוש צלעות)":"מורכב")+'</b>. הקריאה האוטומטית מהתמונה מתאימה כרגע למטבח L פשוט. לשרטוט הזה עדיף <b>קובץ Prodim</b> או <b>הזנה ידנית</b> לדיוק מלא.';
-      return;
-    }
-    if(!ok(j.long_cm)||!ok(j.arm_cm)||!ok(j.depth_cm)){
-      info.textContent="לא הצלחתי לקרוא מידות ברורות מהשרטוט. נסה תמונה חדה יותר, או הזנה ידנית.";
-      return;
-    }
-    if(j.depth_cm>=j.arm_cm){
-      info.textContent="המידות שנקראו לא עקביות (עומק גדול מהזרוע). בדוק את השרטוט או הזן ידנית.";
-      return;
-    }
-    // populate manual form + run
-    go("manual");
-    document.getElementById("long").value=j.long_cm;
-    document.getElementById("arm").value=j.arm_cm;
-    document.getElementById("depth").value=j.depth_cm;
-    if(j.arm_side)document.getElementById("side").value=j.arm_side;
-    const setOp=(pfx,o)=>{ if(!o||!ok(o.w)||!ok(o.h)){document.getElementById(pfx+"Pos").value="";return;}
-      document.getElementById(pfx+"Pos").value=o.fromRight??"";document.getElementById(pfx+"Side").value="right";
-      document.getElementById(pfx+"W").value=o.w; document.getElementById(pfx+"H").value=o.h;
-      if(o.fromFront!=null)document.getElementById(pfx+"Front").value=o.fromFront; };
-    setOp("sink",j.sink); setOp("gas",j.gas);
-    runManual();
-    info.textContent="";
-  }catch(e){ info.textContent="לא הצלחתי לקרוא את המידות אוטומטית. אפשר להזין ידנית."; }
-}</script></body></html>
+    let txt=(data.text||"").replace(/```json|```/g,"").trim();
+    const m=txt.match(/\{[\s\S]*\}/); if(m)txt=m[0];
+    const j=JSON.parse(txt);
+    SKETCH={kitchen:(j.kitchen||[]),cladding:(j.cladding||[]),questions:(j.questions||[]),job:j.job||""};
+    if(!SKETCH.kitchen.length&&!SKETCH.cladding.length){info.innerHTML='<div class="man">לא זוהו חתיכות בשרטוט. נסה תמונה חדה יותר או הזנה ידנית.</div>';return;}
+    info.innerHTML="";
+    renderSketchTable();
+  }catch(e){ info.innerHTML='<div class="man">לא הצלחתי לקרוא את השרטוט: '+e.message+'. אפשר להזין ידנית.</div>'; }
+}
+
+/* ===== טבלת אישור ועריכה — התוכנה מראה מה הבינה, שואלת, ומאפשרת לתקן ===== */
+let SKETCH=null;
+function skRow(arr,i,kind){
+  const p=arr[i];
+  const miss=(v)=>(v===null||v===undefined||v==="")?' style="border-color:#e0a03a"':'';
+  return `<tr>
+    <td style="padding:4px"><input value="${p.label||''}" oninput="SKETCH.${kind}[${i}].label=this.value" style="width:120px"></td>
+    <td style="padding:4px"><input type="number" step="0.1" value="${p.len??''}"${miss(p.len)} oninput="SKETCH.${kind}[${i}].len=parseFloat(this.value)" style="width:80px"></td>
+    <td style="padding:4px"><input type="number" step="0.1" value="${p.depth??''}"${miss(p.depth)} oninput="SKETCH.${kind}[${i}].depth=parseFloat(this.value)" style="width:80px"></td>
+    <td style="padding:4px">${(p.openings&&p.openings.length)?p.openings.map(o=>`${o.kind} ${o.w}×${o.h}`).join(", "):"—"}</td>
+    <td style="padding:4px"><span onclick="SKETCH.${kind}.splice(${i},1);renderSketchTable()" style="cursor:pointer;color:#e05a5a">✕</span></td>
+  </tr>`;
+}
+function renderSketchTable(){
+  const out=document.getElementById("out");
+  const K=SKETCH.kitchen,C=SKETCH.cladding;
+  const missing=[...K,...C].filter(p=>!p.len||!p.depth).length;
+  const qs=SKETCH.questions||[];
+  out.innerHTML=`<div class="combo">
+    <h3>מה שקראתי מהשרטוט ${SKETCH.job?("· "+SKETCH.job):""}</h3>
+    <div class="meta">בדוק, תקן מה שצריך, והוסף מה שחסר. הכל ניתן לעריכה.</div>
+    ${qs.length?`<div class="man" style="margin-top:10px"><b>שאלות:</b><br>${qs.map(q=>"• "+q).join("<br>")}</div>`:""}
+    ${missing?`<div class="man" style="margin-top:10px">יש ${missing} שדות חסרים (מסומנים) — נא להשלים.</div>`:""}
+    <h4 style="margin:14px 0 4px">חתיכות המטבח</h4>
+    <table style="width:100%;font-size:13px"><tr><th>תיאור</th><th>אורך</th><th>עומק</th><th>פתחים</th><th></th></tr>
+      ${K.map((p,i)=>skRow(K,i,"kitchen")).join("")}</table>
+    <button class="btn ghost" style="margin-top:6px" onclick="SKETCH.kitchen.push({label:'חתיכה',len:null,depth:null,openings:[]});renderSketchTable()">+ הוסף חתיכת מטבח</button>
+    <h4 style="margin:14px 0 4px">ציפוי קיר</h4>
+    <table style="width:100%;font-size:13px"><tr><th>תיאור</th><th>אורך</th><th>עומק</th><th>פתחים</th><th></th></tr>
+      ${C.map((p,i)=>skRow(C,i,"cladding")).join("")}</table>
+    <button class="btn ghost" style="margin-top:6px" onclick="SKETCH.cladding.push({label:'ציפוי קיר',len:null,depth:null,openings:[]});renderSketchTable()">+ הוסף ציפוי</button>
+    <div class="row" style="margin-top:16px"><button class="btn" style="flex:1" onclick="generateFromSketch()">צור תוכנית חיתוך + DXF ↓</button></div>
+  </div>`;
+  out.scrollIntoView({behavior:"smooth"});
+}
+async function generateFromSketch(){
+  const K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0), C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
+  if(!K.length&&!C.length){alert("נא להשלים לפחות חתיכה אחת עם אורך ועומק");return;}
+  const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
+  c.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
+  try{
+    const res=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pieces:K,cladding:C,material:MAT,job_name:SKETCH.job||""})});
+    const j=await res.json();
+    if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
+    const mat=MATERIALS[MAT];
+    c.innerHTML=`<div class="combo"><h3>התוכנית מוכנה ✓</h3>
+      <div class="meta">${j.pieces} חתיכות · ${j.slabs} לוחות · ${mat.he} · פלטה ${mat.slabL}×${mat.slabW}</div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" style="flex:2" id="spdf">הורד תוכנית חיתוך (PDF) ↓</button>
+        <button class="btn ghost" style="flex:1" id="sdxf">הורד DXF למכונה ↓</button>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>`;
+    document.getElementById("spdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
+    document.getElementById("sdxf").onclick=()=>download("cut_"+MAT+".dxf",j.dxf);
+  }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
+}
+</script></body></html>
