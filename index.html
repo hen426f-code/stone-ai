@@ -533,14 +533,17 @@ async function readVision(){
 '1) המטבח עצמו: לרוב צורת L — צלע אחת אופקית וצלע/רגל שמתחברת אליה. לכל צלע יש אורך (יכול להיות סכום של כמה מספרים לאורכה, למשל 113.5+156=269.5) ועומק משלה. שים לב: לעומק של כל צלע יכול להיות ערך שונה.',
 '2) ציפוי קיר: חתיכות מלבניות נפרדות (בדרך כלל בחלק התחתון של הדף) שאינן חלק מהמטבח. אם רשומה להן רק מידה אחת — המספר הגדול הוא האורך והקטן הוא העומק.',
 '3) פתחים (כיור/גז/שקע): רשום פתח רק אם כתובות במפורש מידות רוחב וגובה. אם אין מידה מפורשת — אל תרשום את הפתח בכלל.',
-'4) סימן של שני קווים קצרים מקבילים (‖) פירושו עיבוד חזית על אותה צלע.',
+'4) עיבוד חזית מסומן בשתי דרכים, שתיהן זהות במשמעות: (א) שני קווים קצרים מקבילים ‖ על הצלע; (ב) קו מתולתל/גלי שנמשך לאורך הצלע. בשני המקרים אותה צלע מקבלת עיבוד חזית.',
 '5) אל תמציא מספרים. אם ערך לא ברור או חסר — השתמש ב-null ורשום שאלה בשדה questions.',
 '6) קריטי — סימון עשרוני בכתב יד: ספרה קטנה מוגבהת אחרי המספר היא הספרה שאחרי הנקודה. לדוגמה 113 עם 5 קטן למעלה = 113.5; 265 עם 5 קטן = 265.5; 141 עם 4 קטן = 141.4; 57 עם 5 קטן = 57.5. אל תתעלם מהספרה הקטנה ואל תעגל — החזר תמיד את הערך המדויק כולל העשרוני.',
-'7) עיבוד חזית: אם יש סימן ‖ על צלע של חתיכה, החזר לאותה חתיכה fe_cm = אורך העיבוד (בדרך כלל אורך הצלע) ו-fe_from_cm = מהיכן מתחיל (0 אם מההתחלה).',
+'7) עיבוד חזית: אם יש סימן ‖ או קו מתולתל על צלע של חתיכה, החזר לאותה חתיכה fe_cm = אורך העיבוד (בדרך כלל אורך הצלע) ו-fe_from_cm = מהיכן מתחיל (0 אם מההתחלה).',
+'8) פינה: אם שתי חתיכות המטבח נפגשות ויוצרות צורת L (הן מחוברות בפינה בשרטוט), החזר "corner": true. אם החתיכות נפרדות זו מזו, החזר "corner": false. האורכים שתחזיר הם תמיד המידות החיצוניות כפי שרשומות בשרטוט.',
+'9) מיקום פתח: from_left_cm = המרחק ממרכז הפתח לקצה ההתחלה של הצלע לאורכה. from_front_cm = המרחק מהחזית למרכז הפתח. גובה הפתח לא יכול להיות גדול מעומק החתיכה.',
 'מבנה ה-JSON:',
 '{"job":"שם העבודה אם כתוב או null",',
 ' "kitchen":[{"label":"צלע עליונה","len":מספר|null,"depth":מספר|null,"fe_cm":מספר|null,"fe_from_cm":מספר|null,"openings":[{"kind":"כיור|גז|שקע","from_left_cm":מספר,"from_front_cm":מספר,"w":מספר,"h":מספר}]}],',
 ' "cladding":[{"label":"ציפוי קיר","len":מספר|null,"depth":מספר|null,"fe_cm":מספר|null}],',
+' "corner": true|false,',
 ' "questions":["שאלה קצרה בעברית על כל דבר שלא היה ברור"]}'
 ].join("\n");
   try{
@@ -551,7 +554,7 @@ async function readVision(){
     let txt=(data.text||"").replace(/```json|```/g,"").trim();
     const m=txt.match(/\{[\s\S]*\}/); if(m)txt=m[0];
     const j=JSON.parse(txt);
-    SKETCH={kitchen:(j.kitchen||[]),cladding:(j.cladding||[]),questions:(j.questions||[]),job:j.job||""};
+    SKETCH={kitchen:(j.kitchen||[]),cladding:(j.cladding||[]),questions:(j.questions||[]),job:j.job||"",corner:(j.corner!==false),combo:0};
     if(!SKETCH.kitchen.length&&!SKETCH.cladding.length){info.innerHTML='<div class="man">לא זוהו חתיכות בשרטוט. נסה תמונה חדה יותר או הזנה ידנית.</div>';return;}
     info.innerHTML="";
     renderSketchTable();
@@ -572,6 +575,34 @@ function skRow(arr,i,kind){
     <td style="padding:4px"><span onclick="SKETCH.${kind}.splice(${i},1);renderSketchTable()" style="cursor:pointer;color:#e05a5a">✕</span></td>
   </tr>`;
 }
+
+/* ===== קומבינציות פינה: כל צלע בתורה לוקחת את הפינה ===== */
+function sketchCombos(){
+  const K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
+  if(!SKETCH.corner||K.length!==2)return null;
+  const [A,B]=K;
+  const mk=(whole,other,wholeIdx)=>{
+    const cut=+(other.len-whole.depth).toFixed(2);
+    if(cut<=0)return null;
+    const w={...whole,label:(whole.label||"צלע")+" שלמה (כולל פינה)"};
+    const o={...other,len:cut,label:(other.label||"צלע")+" (מקוצרת "+whole.depth+")",
+             fe_cm:(other.fe_cm?Math.max(+(other.fe_cm-whole.depth).toFixed(2),0):other.fe_cm)};
+    return {pieces:wholeIdx===0?[w,o]:[o,w],
+            title:(whole.label||"צלע")+" שלמה",
+            note:other.len+" − "+whole.depth+" = "+cut};
+  };
+  return [mk(A,B,0),mk(B,A,1)].filter(Boolean);
+}
+function openingWarnings(){
+  const out=[];
+  [...SKETCH.kitchen,...SKETCH.cladding].forEach(p=>{
+    (p.openings||[]).forEach(o=>{
+      if(o.h&&p.depth&&o.h>p.depth)out.push("פתח "+(o.kind||"")+" בגובה "+o.h+" גדול מעומק החתיכה ("+p.depth+") — בדוק את המידה.");
+      if(o.w&&p.len&&o.w>p.len)out.push("פתח "+(o.kind||"")+" ברוחב "+o.w+" גדול מאורך החתיכה ("+p.len+").");
+    });
+  });
+  return out;
+}
 function renderSketchTable(){
   const out=document.getElementById("out");
   const K=SKETCH.kitchen,C=SKETCH.cladding;
@@ -581,6 +612,15 @@ function renderSketchTable(){
     <h3>מה שקראתי מהשרטוט ${SKETCH.job?("· "+SKETCH.job):""}</h3>
     <div class="meta">בדוק, תקן מה שצריך, והוסף מה שחסר. הכל ניתן לעריכה.</div>
     ${qs.length?`<div class="man" style="margin-top:10px"><b>שאלות:</b><br>${qs.map(q=>"• "+q).join("<br>")}</div>`:""}
+    ${(()=>{const w=openingWarnings();return w.length?`<div class="man" style="margin-top:10px"><b>שים לב:</b><br>${w.map(x=>"• "+x).join("<br>")}</div>`:"";})()}
+    ${(()=>{const cb=sketchCombos();if(!cb)return "";
+      return `<div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:12px">
+        <b>זוהתה פינה — בחר חלוקה:</b><div class="meta" style="margin:4px 0 8px">חתיכה אחת לוקחת את הפינה, השנייה מתקצרת בעומק שלה.</div>
+        ${cb.map((c,i)=>`<label style="display:block;margin:6px 0;cursor:pointer">
+          <input type="radio" name="cmb" ${SKETCH.combo===i?"checked":""} onchange="SKETCH.combo=${i};renderSketchTable()">
+          קומבינציה ${i+1} · ${c.title} <span class="meta">(${c.note})</span></label>`).join("")}
+        <label style="display:block;margin:6px 0;cursor:pointer"><input type="radio" name="cmb" ${SKETCH.combo===-1?"checked":""} onchange="SKETCH.combo=-1;renderSketchTable()"> בלי פינה — החתיכות נפרדות</label>
+      </div>`;})()}
     ${missing?`<div class="man" style="margin-top:10px">יש ${missing} שדות חסרים (מסומנים) — נא להשלים.</div>`:""}
     <h4 style="margin:14px 0 4px">חתיכות המטבח</h4>
     <table style="width:100%;font-size:13px"><tr><th>תיאור</th><th>אורך</th><th>עומק</th><th>עיבוד חזית</th><th>פתחים</th><th></th></tr>
@@ -595,7 +635,10 @@ function renderSketchTable(){
   out.scrollIntoView({behavior:"smooth"});
 }
 async function generateFromSketch(){
-  const K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0), C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
+  const cb=sketchCombos();
+  let K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
+  if(cb&&SKETCH.combo>=0&&cb[SKETCH.combo])K=cb[SKETCH.combo].pieces;
+  const C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
   if(!K.length&&!C.length){alert("נא להשלים לפחות חתיכה אחת עם אורך ועומק");return;}
   const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
   c.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
