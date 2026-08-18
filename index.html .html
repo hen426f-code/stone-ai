@@ -1,0 +1,662 @@
+<!DOCTYPE html><html lang="he" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>חיתוך שיש · AI</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;800&display=swap');
+:root{--bg:#14151a;--panel:#1c1e25;--panel2:#22252e;--line:#2e323d;--ink:#eef0f4;--mut:#8b909c;--amber:#f0a500;--amberd:#c9860a;--ok:#39b96a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Heebo",Arial,system-ui,sans-serif;line-height:1.5}
+.wrap{max-width:1100px;margin:0 auto;padding:22px 18px 80px}
+header{display:flex;align-items:center;gap:14px;padding:8px 0 22px;border-bottom:1px solid var(--line)}
+.logo{width:46px;height:46px;border-radius:11px;background:repeating-linear-gradient(135deg,var(--amber) 0 7px,#1c1e25 7px 14px);box-shadow:0 0 0 1px #000 inset;flex:none}
+header h1{font-size:23px;font-weight:800;margin:0;letter-spacing:-.3px}
+header .sub{color:var(--mut);font-size:13px;margin-top:2px}
+.tag{margin-inline-start:auto;font-size:11px;color:var(--amber);font-weight:600;border:1px solid var(--amberd);border-radius:20px;padding:4px 12px}
+h2{font-size:15px;font-weight:800;margin:0 0 12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin-top:18px}
+label{display:block;font-size:12.5px;color:var(--mut);margin:0 0 5px}
+input,select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px 12px;font-size:15px;font-family:inherit}
+input:focus,select:focus{outline:none;border-color:var(--amber)}
+.grid{display:grid;gap:14px}.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:560px){.g2,.g3{grid-template-columns:1fr}}
+.mats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.mat{background:var(--panel2);border:1.5px solid var(--line);border-radius:12px;padding:12px;text-align:center;cursor:pointer;transition:.15s}
+.mat:hover{border-color:#3a3f4b}.mat.on{border-color:var(--amber);background:#2a2620}
+.mat b{display:block;font-size:15px;font-weight:800}.mat span{display:block;font-size:11px;color:var(--mut);margin-top:3px}
+.btn{background:var(--amber);color:#15161a;border:none;border-radius:11px;padding:13px 20px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer;width:100%}
+.btn:hover{background:var(--amberd)}
+.btn.ghost{background:transparent;color:var(--amber);border:1.5px solid var(--amberd)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:560px){.opts{grid-template-columns:1fr}}
+.opt{background:var(--panel2);border:1.5px solid var(--line);border-radius:14px;padding:18px;cursor:pointer;transition:.15s;text-align:center}
+.opt:hover{border-color:var(--amber);background:#26241d}
+.opt .ic{font-size:26px}.opt b{display:block;font-size:15px;font-weight:800;margin-top:8px}
+.opt span{display:block;font-size:11.5px;color:var(--mut);margin-top:4px}
+.combo{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px}
+.combo h3{margin:0 0 4px;font-size:17px;font-weight:800}.combo .meta{font-size:12.5px;color:var(--mut);margin-bottom:12px}
+canvas{width:100%;height:auto;background:#0f1013;border-radius:12px;border:1px solid var(--line);display:block}
+.stats{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0;font-size:13px}.stats b{color:var(--amber)}
+.chip{display:inline-block;background:#2a2620;color:var(--amber);border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:600;margin:2px}
+.note{font-size:12px;color:var(--mut);margin-top:8px}
+.man{background:#2a1e1e;border:1px solid #5a2b2b;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#f0b0b0;margin-top:8px}
+.info{background:#1e2630;border:1px solid #2c3d4d;border-radius:10px;padding:11px 13px;font-size:12.5px;color:#bcd3e6;margin-top:10px}
+.foot{margin-top:30px;text-align:center;color:var(--mut);font-size:11.5px}
+.back{color:var(--amber);cursor:pointer;font-size:13px;font-weight:600;display:inline-block;margin-bottom:8px}
+.hidden{display:none}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);margin-top:10px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-inline-end:5px;vertical-align:-1px}
+</style></head><body><div class="wrap">
+<header><div class="logo"></div><div><h1>חיתוך שיש · AI</h1><div class="sub">ממידות לקובץ חיתוך מוכן למכונה</div></div><div class="tag">GMM eXtra · גרסת בדיקה</div></header>
+
+<!-- START -->
+<div id="start">
+  <div class="card"><h2>איך תרצה להזין את המידות?</h2>
+    <div class="opts">
+      <div class="opt" onclick="go('prodim')"><div class="ic">📐</div><b>קובץ מפרוליינר (Prodim)</b><span>קובץ DXF ממכשיר המדידה — נקרא ומעובד כאן</span></div>
+      <div class="opt" onclick="go('photo')"><div class="ic">📷</div><b>צילום מידות מדף</b><span>תמונה של שרטוט — נשלח ל-AI לקריאה</span></div>
+      <div class="opt" onclick="go('pdf')"><div class="ic">📄</div><b>קובץ PDF עם מידות</b><span>מסמך מודד — נשלח ל-AI לקריאה</span></div>
+      <div class="opt" onclick="go('manual')"><div class="ic">✏️</div><b>הזנה ידנית</b><span>הקלדת מידות מטבח L</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- MATERIAL (shared) -->
+<div id="matcard" class="card hidden"><h2>חומר</h2><div class="mats" id="mats"></div><div class="note" id="matnote">העומק ומידת הפלטה נקבעים אוטומטית לפי החומר.</div></div>
+
+<!-- PRODIM -->
+<div id="prodim" class="card hidden">
+  <span class="back" onclick="home()">→ חזרה</span>
+  <h2>קובץ פרוליינר (Prodim)</h2>
+  <input type="file" id="prodimFile" accept=".dxf" onchange="readProdim()">
+  <div class="note">בחר קובץ DXF מהמודד. המערכת מזהה את החתיכות (ירוק=עיבוד), שומרת אותן כמו שהן, ומסדרת על הלוח.</div>
+  <div id="prodimInfo"></div>
+</div>
+
+<!-- PHOTO/PDF -->
+<div id="upload" class="card hidden">
+  <span class="back" onclick="home()">→ חזרה</span>
+  <h2 id="upTitle"></h2>
+  <input type="file" id="upFile" accept="image/*,.pdf" onchange="readVision()">
+  <div class="info" id="upInfo"></div>
+</div>
+
+<!-- MANUAL -->
+<div id="manual" class="card hidden">
+  <span class="back" onclick="home()">→ חזרה</span>
+  <h2>הזנת מידות מטבח L (ס"מ)</h2>
+  <div class="grid g3">
+    <div><label>אורך צלע ארוכה</label><input id="long" type="number" value="455"></div>
+    <div><label>אורך זרוע</label><input id="arm" type="number" value="132"></div>
+    <div><label>עומק משטח</label><input id="depth" type="number" value="64"></div>
+  </div>
+  <div class="grid g2" style="margin-top:14px">
+    <div><label>צד הזרוע</label><select id="side"><option value="left">שמאל</option><option value="right">ימין</option></select></div>
+    <div></div>
+  </div>
+  <div class="card" style="margin-top:14px;background:var(--panel2)">
+    <div class="grid g3">
+      <div><label>כיור — מרחק</label><input id="sinkPos" type="number" value="154" placeholder="ריק = ידני"></div>
+      <div><label>נמדד מ...</label><select id="sinkSide"><option value="left">שמאל</option><option value="right">ימין</option></select></div>
+      <div><label>מידה (רוחב×עומק)</label><div class="row"><input id="sinkW" type="number" value="53" style="flex:1"><input id="sinkH" type="number" value="33" style="flex:1"></div></div>
+      <div><label>מרחק מהחזית</label><input id="sinkFront" type="number" value="15" placeholder="ס"מ"></div>
+    </div>
+    <div class="grid g3" style="margin-top:12px">
+      <div><label>גז — מרחק</label><input id="gasPos" type="number" value="81" placeholder="ריק = ידני"></div>
+      <div><label>נמדד מ...</label><select id="gasSide"><option value="left">שמאל</option><option value="right" selected>ימין</option></select></div>
+      <div><label>מידה (רוחב×עומק)</label><div class="row"><input id="gasW" type="number" value="56" style="flex:1"><input id="gasH" type="number" value="49" style="flex:1"></div></div>
+      <div><label>מרחק מהחזית</label><input id="gasFront" type="number" value="8" placeholder="ס"מ"></div>
+    </div>
+  </div>
+  <button class="btn" style="margin-top:14px" onclick="runManual()">חשב קומבינציות ←</button>
+  <div class="note">פתח ללא מידה (שדה מרחק ריק) → יסומן "לפתיחה ידנית".</div>
+</div>
+
+<div id="out"></div>
+<div class="foot">חיתוך שיש · AI — מייצר DXF בפורמט המכונה (‎R12‏, שכבה ‎1000‏, מעטפת ראשונה, פתחים אחרונים).<br>גרסת בדיקה · תמיד לוודא את הקובץ במכונה לפני חיתוך.</div>
+</div>
+
+<!-- CHAT -->
+<button id="chatFab" onclick="toggleChat()" title="שאל את ה-AI">💬</button>
+<div id="chatPanel" class="chat-hidden">
+  <div class="chat-head"><span>🤖 עוזר AI למכונה</span><span class="chat-x" onclick="toggleChat()">✕</span></div>
+  <div id="chatBody"></div>
+  <div id="chatAttach" style="display:none;padding:6px 12px;font-size:12px;color:var(--amber)">📎 תמונה מצורפת · <span onclick="clearChatImg()" style="cursor:pointer;text-decoration:underline">הסר</span></div>
+  <div class="chat-input">
+    <label for="chatImg" id="chatClip" title="צרף תמונה">📷</label>
+    <input type="file" id="chatImg" accept="image/*" style="display:none" onchange="attachChatImg()">
+    <textarea id="chatText" rows="1" placeholder="שאל, או צלם תקלה/סקיצה ושאל מה לעשות…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
+    <button onclick="sendChat()" id="chatSend">➤</button>
+  </div>
+</div>
+<style>
+#chatFab{position:fixed;inset-inline-end:20px;bottom:20px;width:58px;height:58px;border-radius:50%;background:var(--amber);color:#15161a;border:none;font-size:26px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.4);z-index:50}
+#chatPanel{position:fixed;inset-inline-end:20px;bottom:88px;width:min(400px,calc(100vw - 32px));height:min(560px,calc(100vh - 130px));background:var(--panel);border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;z-index:50;box-shadow:0 12px 40px rgba(0,0,0,.5);overflow:hidden}
+#chatPanel.chat-hidden{display:none}
+.chat-head{background:var(--ink);color:var(--ink);padding:13px 16px;display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:15px;color:#fff;border-bottom:2px solid var(--amber)}
+.chat-x{cursor:pointer;color:var(--mut);font-weight:400}
+#chatBody{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:85%;padding:9px 13px;border-radius:14px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.msg.u{background:var(--amber);color:#15161a;align-self:flex-start;border-bottom-right-radius:4px}
+.msg.a{background:var(--panel2);color:var(--ink);align-self:flex-end;border-bottom-left-radius:4px;border:1px solid var(--line)}
+.msg.sys{background:transparent;color:var(--mut);font-size:12px;align-self:center;text-align:center}
+.chat-input{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);align-items:flex-end}
+.chat-input textarea{flex:1;resize:none;max-height:100px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--ink);padding:9px 12px;font-size:14px;font-family:inherit}
+.chat-input button{width:42px;height:42px;border-radius:50%;background:var(--amber);color:#15161a;border:none;font-size:18px;cursor:pointer;flex:none}
+#chatClip{width:38px;height:42px;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;flex:none;opacity:.85}
+</style>
+
+<script>
+const MATERIALS={porcelan:{he:"פורצלן",depth:12,slabL:320,slabW:160},dekton:{he:"דקטון",depth:12,slabL:330,slabW:150},synthetic:{he:"סינטטי",depth:20,slabL:303,slabW:140}};
+const KERF=0.6,PRIO_ACI=[1,2,3,4,5,6,7,8,9,9],OPENING_ACI=9;
+const ACICOL={1:"#e6194b",2:"#f58231",3:"#3cb44b",4:"#42d4f4",5:"#4363d8",6:"#a24bd6",7:"#9a9a3a",8:"#00a0a0",9:"#e6194b"};
+let MAT="porcelan", MODE=null, PRODIM_PIECES=null;
+
+/* ---- מנוע ה-PDF/DXF (Render) ---- */
+const ENGINE="https://stone-ai-engine.onrender.com";
+function dlB64(name,b64,mime){const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);saveFile(name,new Blob([arr],{type:mime}));}
+async function engineResult(container,payload,isProdim,file){
+  container.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">מפיק PDF מקצועי + DXF למכונה. בפעם הראשונה זה עלול לקחת עד דקה (השרת מתעורר).</div></div>';
+  try{
+    let res;
+    if(isProdim){const fd=new FormData();fd.append("file",file);fd.append("material",MAT);res=await fetch(ENGINE+"/api/prodim",{method:"POST",body:fd});}
+    else{res=await fetch(ENGINE+"/api/plan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
+    const j=await res.json();
+    if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
+    const mat=MATERIALS[MAT];
+    const info=isProdim?`${j.pieces} חתיכות · ${j.slabs} לוחות`:`${j.combos} קומבינציות · ${j.slabs} לוחות`;
+    const mitre=(isProdim&&j.mitre)?'<div class="man">שים לב: יש בקובץ חיתוכי גרונג (46°).</div>':'';
+    container.innerHTML=`<div class="combo"><h3>התוכנית מוכנה ✓</h3>
+      <div class="meta">${info} · ${mat.he} · פלטה ${mat.slabL}×${mat.slabW}</div>${mitre}
+      <div class="row" style="margin-top:14px">
+        <button class="btn" style="flex:2" id="epdf">הורד תוכנית חיתוך (PDF) ↓</button>
+        <button class="btn ghost" style="flex:1" id="edxf">הורד DXF למכונה ↓</button>
+      </div></div>`;
+    document.getElementById("epdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
+    document.getElementById("edxf").onclick=()=>download("cut_"+MAT+".dxf",j.dxf);
+    container.scrollIntoView({behavior:"smooth"});
+  }catch(e){container.innerHTML=`<div class="combo"><h3>שגיאה ביצירת התוכנית</h3><div class="man">${e.message}. נסה שוב בעוד רגע.</div></div>`;}
+}
+
+/* ---- variable-depth shelf nesting ---- */
+function nestPieces(pieces,slabL,slabW){
+  // סיבוב אוטומטי: אם עומק החתיכה גדול מרוחב הפלטה, מסובבים 90° כדי שתיכנס
+  const oriented=pieces.map(p=>{
+    let len=p.len, depth=p.depth, rot=false;
+    if(depth>slabW && len<=slabW){ [len,depth]=[depth,len]; rot=true; }
+    return {...p, len, depth, rot, fits:(depth<=slabW && len<=slabL)};
+  });
+  const order=[...oriented].map((p,i)=>({...p,_i:i})).sort((a,b)=>b.depth-a.depth||b.len-a.len);
+  const slabs=[]; let cur={rows:[],usedH:0}; 
+  const newSlab=()=>{if(cur.rows.length)slabs.push(cur);cur={rows:[],usedH:0};};
+  let shelf=null;
+  const newShelf=(h)=>{ if(cur.usedH+(cur.rows.length?KERF:0)+h>slabW){newSlab();} 
+    const y=cur.usedH+(cur.rows.length?KERF:0); shelf={y,h,used:0,items:[]}; cur.rows.push(shelf); cur.usedH=y+h; };
+  for(const pc of order){
+    if(!shelf||shelf.used+(shelf.items.length?KERF:0)+pc.len>slabL||pc.depth>shelf.h){
+      // try existing shelves with room and enough height
+      let placed=false;
+      for(const s of cur.rows){ if(pc.depth<=s.h && s.used+(s.items.length?KERF:0)+pc.len<=slabL){ const x=s.used+(s.items.length?KERF:0); s.items.push({pc,x,y:s.y}); s.used=x+pc.len; placed=true; break; } }
+      if(placed) continue;
+      newShelf(pc.depth); 
+    }
+    const x=shelf.used+(shelf.items.length?KERF:0); shelf.items.push({pc,x,y:shelf.y}); shelf.used=x+pc.len;
+  }
+  if(cur.rows.length)slabs.push(cur);
+  const MINREM=5;
+  slabs.forEach(s=>{
+    s.remnant=Math.round((slabW-s.usedH)*10)/10; // רצועה תחתונה (תאימות)
+    s.remnants=[];
+    // שארית בסוף כל שורה (מימין לחתיכות)
+    for(const shelf of s.rows){
+      const leftLen=Math.round((slabL-shelf.used)*10)/10;
+      if(leftLen>=MINREM && shelf.h>=MINREM)
+        s.remnants.push({x:shelf.used,y:shelf.y,w:leftLen,h:Math.round(shelf.h*10)/10});
+    }
+    // רצועה תחתונה (מתחת לכל השורות)
+    const bottomH=Math.round((slabW-s.usedH)*10)/10;
+    if(bottomH>=MINREM) s.remnants.push({x:0,y:s.usedH,w:slabL,h:bottomH});
+  });
+  return slabs;
+}
+function genDXF(pieces,mat){
+  const cutDepth=mat.depth;
+  const slabs=nestPieces(pieces,mat.slabL,mat.slabW);
+  const CM=10, layer=`1000-${String(cutDepth).replace('.','_')}`;
+  let handle=0x100;const H=()=>((handle++).toString(16).toUpperCase());
+  const ents=[],manual=[],draw=[];let prio=0,slabBase=0;
+  const poly=(pts,aci)=>{let s=`0\nPOLYLINE\n5\n${H()}\n8\n${layer}\n6\nCONTINUOUS\n62\n${aci}\n66\n1\n10\n0.0\n20\n0.0\n30\n0.0\n70\n1\n`;
+    for(const [x,y] of pts)s+=`0\nVERTEX\n5\n${H()}\n8\n${layer}\n6\nCONTINUOUS\n10\n${x}\n20\n${y}\n30\n0.0\n70\n0\n`;
+    s+=`0\nSEQEND\n5\n${H()}\n8\n${layer}\n`;ents.push(s);};
+  slabs.forEach((slab,si)=>{
+    slab.rows.forEach(shelf=>{ shelf.items.forEach(({pc,x,y})=>{
+      const px=x*CM, py=(slabBase+y)*CM, pw=pc.len*CM, ph=pc.depth*CM, envP=Math.min(prio,7); prio++;
+      poly([[px,py],[px+pw,py],[px+pw,py+ph],[px,py+ph]],PRIO_ACI[envP]);
+      const drec={si,x,y,w:pc.len,h:pc.depth,aci:PRIO_ACI[envP],ops:[]};
+      for(const op of (pc.openings||[])){ if(op.w&&op.h){
+        const ow=op.w*CM,oh=op.h*CM,cx=px+op.from_left_cm*CM,cy=(op.fromFront!=null?py+op.fromFront*CM+oh/2:py+ph/2);
+        poly([[cx-ow/2,cy-oh/2],[cx+ow/2,cy-oh/2],[cx+ow/2,cy+oh/2],[cx-ow/2,cy+oh/2]],OPENING_ACI);
+        drec.ops.push({x:op.from_left_cm-op.w/2,cy:(op.fromFront!=null?op.fromFront+op.h/2:pc.depth/2),w:op.w,h:op.h,kind:op.kind});
+      } else manual.push({slab:si+1,piece:pc.label||"",kind:op.kind,pos:op.from_left_cm}); }
+      draw.push(drec);
+    });});
+    slabBase+=mat.slabW+15;
+  });
+  const header=`0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n`;
+  const tables=`0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLTYPE\n70\n1\n0\nLTYPE\n2\nCONTINUOUS\n70\n0\n3\nSolid line\n72\n65\n73\n0\n40\n0.0\n0\nENDTAB\n0\nTABLE\n2\nLAYER\n70\n1\n0\nLAYER\n2\n${layer}\n70\n0\n62\n7\n6\nCONTINUOUS\n0\nENDTAB\n0\nENDSEC\n`;
+  return {dxf:header+tables+`0\nSECTION\n2\nENTITIES\n${ents.join("")}0\nENDSEC\n0\nEOF\n`,slabs,manual,draw,layer};
+}
+/* ---- kitchen combos ---- */
+function kitchenCombos(long,arm,depth,sink,gas,slabL){
+  const corner=depth,combos=[];
+  const gasP=(len,start)=>{if(!gas)return[];const rel=gas.fromLeft-start;return(rel<0||rel>len)?[]:[{kind:"gas",from_left_cm:rel,w:gas.w,h:gas.h,fromFront:gas.fromFront}];};
+  const sinkP=(start,len)=>{if(!sink)return[];const rel=sink.fromLeft-start;return(rel<0||rel>len)?[]:[{kind:"sink",from_left_cm:rel,w:sink.w,h:sink.h,fromFront:sink.fromFront}];};
+  if(long<=slabL){
+    combos.push({name:"פינה לצלע",pieces:[{len:long,depth,label:"צלע+פינה",openings:gasP(long,0).concat(sinkP(0,long))},{len:arm-corner,depth,label:"השלמת זרוע",openings:[]}]});
+    combos.push({name:"זרוע שלמה",pieces:[{len:arm,depth,label:"זרוע שלמה",openings:[]},{len:long-corner,depth,label:"צלע",openings:gasP(long-corner,corner).concat(sinkP(corner,long-corner))}]});
+  } else {
+    const joint=sink?sink.fromLeft:Math.min(slabL,long/2),leftLen=joint,rightLen=long-joint;
+    combos.push({name:"פינה לצלע",pieces:[{len:leftLen,depth,label:"צלע שמאל+פינה",openings:[]},{len:rightLen,depth,label:"צלע ימין+גז",openings:gasP(rightLen,joint).concat(sink?[{kind:"sink",from_left_cm:sink.w/2,w:sink.w,h:sink.h,fromFront:sink.fromFront}]:[])},{len:arm-corner,depth,label:"השלמת זרוע",openings:[]}]});
+    combos.push({name:"זרוע שלמה",pieces:[{len:arm,depth,label:"זרוע שלמה",openings:[]},{len:leftLen-corner,depth,label:"צלע שמאל",openings:[]},{len:rightLen,depth,label:"צלע ימין+גז",openings:gasP(rightLen,joint).concat(sink?[{kind:"sink",from_left_cm:sink.w/2,w:sink.w,h:sink.h,fromFront:sink.fromFront}]:[])}]});
+  }
+  // הגנה: להסיר חתיכות עם מידה לא-חוקית (0 או שלילית) — מונע "חתיכות" בלתי אפשריות
+  for(const c of combos) c.pieces=c.pieces.filter(p=>p.len>0.5 && p.depth>0.5);
+  return combos.filter(c=>c.pieces.length>0);
+}
+/* ---- Prodim DXF reader ---- */
+function parseDXF(text){
+  const L=text.split(/\r\n|\r|\n/),pairs=[];
+  for(let i=0;i+1<L.length;i+=2)pairs.push([L[i].trim(),L[i+1]]);
+  const layerColor={},ents=[];let cur=null,section=null,curLayer=null;
+  const flush=()=>{if(cur)ents.push(cur);cur=null;};
+  for(const [c,v] of pairs){
+    if(c==="2"&&["ENTITIES","TABLES","HEADER","BLOCKS"].includes(v))section=v;
+    if(section==="TABLES"){ if(c==="0"&&v==="LAYER")curLayer={}; else if(curLayer&&c==="2")curLayer.name=v; else if(curLayer&&c==="62"){layerColor[curLayer.name]=parseInt(v);curLayer=null;} }
+    if(section!=="ENTITIES")continue;
+    if(c==="0"){flush(); if(v==="LINE"||v==="ARC")cur={type:v,layer:"0",color:256};}
+    else if(cur){ if(c==="8")cur.layer=v; else if(c==="62")cur.color=parseInt(v); else if(c==="10")cur.x1=parseFloat(v); else if(c==="20")cur.y1=parseFloat(v); else if(c==="11")cur.x2=parseFloat(v); else if(c==="21")cur.y2=parseFloat(v); else if(c==="40")cur.r=parseFloat(v); else if(c==="50")cur.a0=parseFloat(v); else if(c==="51")cur.a1=parseFloat(v);}
+  } flush(); return {ents,layerColor};
+}
+function extractPieces(text,cutColor=3,tol=0.8,minCm=12){
+  const {ents,layerColor}=parseDXF(text);
+  const eff=e=>(e.color===256||e.color===undefined)?(layerColor[e.layer]??7):e.color;
+  const segs=[];
+  for(const e of ents){ if(eff(e)!==cutColor)continue;
+    if(e.type==="LINE")segs.push([[e.x1,e.y1],[e.x2,e.y2]]);
+    else if(e.type==="ARC"){const a0=e.a0*Math.PI/180,a1=e.a1*Math.PI/180;segs.push([[e.x1+e.r*Math.cos(a0),e.y1+e.r*Math.sin(a0)],[e.x1+e.r*Math.cos(a1),e.y1+e.r*Math.sin(a1)]]);}}
+  const nodes=[],map=new Map(),key=p=>Math.round(p[0]/tol)+"_"+Math.round(p[1]/tol);
+  const nid=p=>{const k=key(p);if(!map.has(k)){map.set(k,nodes.length);nodes.push(p);}return map.get(k);};
+  const parent=[],find=x=>{while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;};
+  for(const [p,q] of segs){const a=nid(p),b=nid(q);while(parent.length<nodes.length)parent.push(parent.length);if(a!==b)parent[find(a)]=find(b);}
+  const comp=new Map();
+  for(let i=0;i<nodes.length;i++){const r=find(i);if(!comp.has(r))comp.set(r,[]);comp.get(r).push(nodes[i]);}
+  const pieces=[];
+  for(const arr of comp.values()){ if(arr.length<3)continue;
+    const xs=arr.map(p=>p[0]),ys=arr.map(p=>p[1]);
+    const w=(Math.max(...xs)-Math.min(...xs))/10,h=(Math.max(...ys)-Math.min(...ys))/10;
+    if(w<minCm||h<minCm)continue;
+    pieces.push({len:Math.round(w*10)/10,depth:Math.round(h*10)/10,openings:[],label:""});}
+  return pieces;
+}
+/* ---- canvas ---- */
+function drawSlab(cv,mat,res){
+  const ctx=cv.getContext("2d"),CW=cv.width;
+  const n=res.slabs.length, pad=24, gap=30;
+  const bandW=CW-2*pad, sc=bandW/mat.slabL, bandH=mat.slabW*sc;
+  cv.height=Math.ceil(pad*2 + n*bandH + (n-1)*gap);
+  const CH=cv.height; ctx.clearRect(0,0,CW,CH);
+  for(let si=0; si<n; si++){
+    const oy=pad+si*(bandH+gap), ox=pad, slab=res.slabs[si];
+    ctx.fillStyle="#191b20";ctx.strokeStyle="#3a3f4b";ctx.lineWidth=1.5;
+    ctx.setLineDash([5,4]);ctx.strokeRect(ox,oy,mat.slabL*sc,bandH);ctx.setLineDash([]);
+    ctx.fillRect(ox,oy,mat.slabL*sc,bandH);
+    // slab label
+    ctx.fillStyle="#8b909c";ctx.font="600 12px Heebo,Arial";ctx.textAlign="right";
+    ctx.fillText("לוח "+(si+1),ox+mat.slabL*sc-4,oy-7);
+    // all remnant regions (right-of-row + bottom)
+    ctx.font="10px Heebo,Arial";
+    for(const rr of (slab.remnants||[])){
+      const rx=ox+rr.x*sc, ry2=oy+rr.y*sc, rw=rr.w*sc, rh=rr.h*sc;
+      ctx.fillStyle="rgba(57,185,106,.10)";ctx.fillRect(rx,ry2,rw,rh);
+      ctx.strokeStyle="rgba(57,185,106,.5)";ctx.setLineDash([3,3]);ctx.lineWidth=1;ctx.strokeRect(rx,ry2,rw,rh);ctx.setLineDash([]);
+      ctx.fillStyle="#39b96a";ctx.textAlign="center";ctx.direction="ltr";
+      if(rw>40&&rh>18)ctx.fillText(rr.w+"×"+rr.h,rx+rw/2,ry2+rh/2+3);ctx.direction="rtl";
+    }
+    // pieces on this slab
+    for(const d of res.draw){ if(d.si!==si)continue;
+      const X=ox+d.x*sc,Y=oy+d.y*sc,W=d.w*sc,Hh=d.h*sc,c=ACICOL[d.aci]||"#888";
+      ctx.fillStyle="rgba(255,255,255,.045)";ctx.fillRect(X,Y,W,Hh);
+      ctx.strokeStyle=c;ctx.lineWidth=2;ctx.strokeRect(X,Y,W,Hh);
+      ctx.fillStyle="#cfd3db";ctx.font="600 11px Heebo,Arial";ctx.textAlign="center";ctx.direction="ltr";
+      if(W>34&&Hh>16)ctx.fillText(d.w+"×"+d.h,X+W/2,Y+Hh/2+4);ctx.direction="rtl";
+      for(const op of d.ops){const oX=ox+(d.x+op.x)*sc,oY=oy+(d.y+op.cy-op.h/2)*sc;
+        ctx.strokeStyle="#e6194b";ctx.lineWidth=1.6;ctx.strokeRect(oX,oY,op.w*sc,op.h*sc);}
+    }
+  }
+}
+function genPDF(title,pieces,mat,res){
+  // report canvas (A4 landscape ratio) — Hebrew drawn on canvas (safe), then image→PDF
+  const W=1400,H=990,rc=document.createElement("canvas");rc.width=W;rc.height=H;
+  const ctx=rc.getContext("2d");ctx.fillStyle="#ffffff";ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#15161a";ctx.font="800 30px Heebo,Arial";ctx.textAlign="right";ctx.direction="rtl";
+  ctx.fillText(title,W-40,55);
+  ctx.fillStyle="#666";ctx.font="15px Heebo,Arial";
+  ctx.fillText(`${pieces.length} חתיכות · ${mat.he} · פלטה ${mat.slabL}×${mat.slabW} · עומק חיתוך ${mat.depth} מ\"מ`,W-40,88);
+  // slab layout onto a temp canvas then blit
+  const tc=document.createElement("canvas");tc.width=1320;drawSlab(tc,mat,res);
+  const availH=H-230, scale=Math.min(1320/tc.width,availH/tc.height,1.6);
+  ctx.drawImage(tc,40,110,tc.width*scale,tc.height*scale);
+  // remnants list
+  let ry=H-90;ctx.fillStyle="#0a7d3b";ctx.font="600 16px Heebo,Arial";ctx.textAlign="right";
+  ctx.fillText("שאריות פנויות:",W-40,ry);
+  ctx.fillStyle="#0a7d3b";ctx.font="14px Heebo,Arial";
+  res.slabs.forEach((s,i)=>{ry+=24;ctx.direction="rtl";
+    ctx.fillText("לוח "+(i+1)+": "+((s.remnants&&s.remnants.length)?s.remnants.map(r=>r.w+"×"+r.h).join(" , "):"—"),W-40,ry);});
+  // בונה PDF פנימי (עמוד יחיד עם תמונת התוכנית) — ללא תלות באינטרנט
+  const jpeg=rc.toDataURL("image/jpeg",0.92).split(",")[1];
+  const bin=atob(jpeg), iw=rc.width, ih=rc.height;
+  const pw=842, ph=595, pscale=Math.min(pw/iw,ph/ih), dw=iw*pscale, dh=ih*pscale, ox=(pw-dw)/2, oy=(ph-dh)/2;
+  const objs=[
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`,
+    `<< /Type /XObject /Subtype /Image /Width ${iw} /Height ${ih} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bin.length} >>|STREAM|${bin}|ENDSTREAM|`,
+  ];
+  const content=`q ${dw.toFixed(2)} 0 0 ${dh.toFixed(2)} ${ox.toFixed(2)} ${oy.toFixed(2)} cm /Im0 Do Q`;
+  objs.push(`<< /Length ${content.length} >>|STREAM|${content}|ENDSTREAM|`);
+  // assemble to bytes
+  const bytes=[]; const push=s=>{for(let i=0;i<s.length;i++)bytes.push(s.charCodeAt(i)&0xff);};
+  push("%PDF-1.4\n"); const offs=[];
+  objs.forEach((o,i)=>{ offs.push(bytes.length);
+    const parts=o.split("|STREAM|");
+    if(parts.length===2){ const [hdr,rest]=parts; const [stream,tail]=rest.split("|ENDSTREAM|");
+      push(`${i+1} 0 obj\n${hdr}\nstream\n`); push(stream); push(`\nendstream\nendobj\n`);
+    } else { push(`${i+1} 0 obj\n${o}\nendobj\n`); }
+  });
+  const xref=bytes.length;
+  push(`xref\n0 ${objs.length+1}\n0000000000 65535 f \n`);
+  offs.forEach(o=>push(String(o).padStart(10,"0")+" 00000 n \n"));
+  push(`trailer\n<< /Size ${objs.length+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  const u8=new Uint8Array(bytes);
+  const blob=new Blob([u8],{type:"application/pdf"});
+  const name=`cut_${MAT}.pdf`;
+  if(navigator.canShare){const file=new File([blob],name,{type:"application/pdf"});
+    if(navigator.canShare({files:[file]})){navigator.share({files:[file],title:name}).catch(()=>fallbackDL(blob,name));return;}}
+  fallbackDL(blob,name);
+}
+function saveFile(name,blob){
+  // iOS/ספארי: קודם "שיתוף" (הכי אמין לשמירת קובץ), אחרת הורדה רגילה
+  try{
+    if(navigator.canShare){
+      const file=new File([blob],name,{type:blob.type||"application/octet-stream"});
+      if(navigator.canShare({files:[file]})){ navigator.share({files:[file]}).catch(()=>fallbackDL(blob,name)); return; }
+    }
+  }catch(e){}
+  fallbackDL(blob,name);
+}
+function download(name,text){
+  try{ saveFile(name,new Blob([text],{type:"application/dxf"})); }
+  catch(e){ alert("שגיאה בהורדה: "+e.message); }
+}
+function fallbackDL(blob,name){
+  const u=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=u;a.download=name;a.rel="noopener";
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(u);},1500);
+}
+function num(id){const v=parseFloat(document.getElementById(id).value);return isNaN(v)?null:v;}
+/* ---- render results ---- */
+function showResult(title,pieces){
+  const mat=MATERIALS[MAT],res=genDXF(pieces,mat),out=document.getElementById("out");
+  const el=document.createElement("div");el.className="combo";
+  el.innerHTML=`<h3>${title}</h3><div class="meta">${pieces.length} חתיכות · ${mat.he} · פלטה ${mat.slabL}×${mat.slabW}</div>
+    <div>${pieces.map(p=>`<span class="chip" dir="ltr">${p.len}×${p.depth}</span>`).join("")}</div>
+    <canvas width="960" height="360" style="margin-top:12px"></canvas>
+    <div class="stats"><span>חתיכות: <b>${pieces.length}</b></span><span>לוחות: <b>${res.slabs.length}</b></span></div>
+    <div class="note" style="color:#39b96a">שאריות פנויות: ${res.slabs.map((s,i)=>"לוח "+(i+1)+": "+((s.remnants&&s.remnants.length)?s.remnants.map(r=>r.w+"×"+r.h).join(" , "):"—")).join(" · ")}</div>
+    ${res.manual.length?`<div class="man">פתחים לפתיחה ידנית: ${res.manual.map(m=>m.kind+" @ "+m.pos).join(" · ")}</div>`:""}
+    <div class="row" style="margin-top:12px">
+      <button class="btn" style="flex:2">הורד DXF למכונה ↓</button>
+      <button class="btn ghost pdfbtn" style="flex:1">הורד PDF ↓</button>
+    </div>`;
+  out.appendChild(el);drawSlab(el.querySelector("canvas"),mat,res);
+  el.querySelector("button").onclick=()=>download(`cut_${MAT}.dxf`,res.dxf);
+  el.querySelector(".pdfbtn").onclick=()=>genPDF(title,pieces,mat,res);
+  el.scrollIntoView({behavior:"smooth"});
+}
+function runManual(){
+  const mat=MATERIALS[MAT],long=num("long"),arm=num("arm"),depth=num("depth");
+  if(!long||!arm||!depth){alert("נא למלא אורך, זרוע ועומק");return;}
+  const conv=(pos,side)=>pos==null?null:(side==="right"?long-pos:pos);
+  const mk=(pfx)=>{const p=num(pfx+"Pos");if(p==null)return null;return {"in":"long","from_left":conv(p,document.getElementById(pfx+"Side").value),"w":num(pfx+"W"),"h":num(pfx+"H")};};
+  const payload={long,arm,depth,arm_side:document.getElementById("side").value,sink:mk("sink"),gas:mk("gas"),material:MAT};
+  const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
+  engineResult(c,payload,false,null);
+}
+function readProdim(){
+  const f=document.getElementById("prodimFile").files[0];if(!f)return;
+  document.getElementById("prodimInfo").innerHTML=`<div class="info">שולח את הקובץ למנוע…</div>`;
+  const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
+  engineResult(c,null,true,f);
+}
+/* ---- navigation ---- */
+function renderMats(){const m=document.getElementById("mats");m.innerHTML="";
+  Object.entries(MATERIALS).forEach(([k,v])=>{const d=document.createElement("div");d.className="mat"+(k===MAT?" on":"");
+    d.innerHTML=`<b>${v.he}</b><span>עובי ${v.depth} מ"מ</span><span>פלטה ${v.slabL}×${v.slabW}</span>`;
+    d.onclick=()=>{MAT=k;renderMats();};m.appendChild(d);});}
+function hideAll(){["start","matcard","prodim","upload","manual"].forEach(id=>document.getElementById(id).classList.add("hidden"));document.getElementById("out").innerHTML="";}
+function home(){hideAll();document.getElementById("start").classList.remove("hidden");}
+function go(mode){MODE=mode;hideAll();
+  if(mode==="manual"){document.getElementById("matcard").classList.remove("hidden");document.getElementById("manual").classList.remove("hidden");}
+  else if(mode==="prodim"){document.getElementById("matcard").classList.remove("hidden");document.getElementById("prodim").classList.remove("hidden");}
+  else{document.getElementById("upload").classList.remove("hidden");
+    document.getElementById("upTitle").textContent=mode==="photo"?"צילום מידות מדף":"קובץ PDF עם מידות";
+    document.getElementById("upInfo").textContent="העלה "+(mode==="photo"?"תמונה של השרטוט":"קובץ PDF")+" — ה-AI יקרא את המידות אוטומטית וימלא את הטופס.";}
+  renderMats();
+}
+renderMats();
+
+/* ================= CHAT ================= */
+const KNOWLEDGE=`אתה עוזר AI מומחה למכונת חיתוך שיש GMM eXtra CNC (מסור גשר לאבן) של הן, חותך שיש באילת. ענה בעברית פשוטה וברורה לאיש מקצוע. היה מדויק; אם אינך בטוח, אמור זאת. בתקלה תן: הסיבה, תיקון עכשיו, ומניעה. בטיחות קודמת.
+
+מכונה: GMM eXtra CNC, ממשק עברית על Windows, סיסמה רמה1=1975. מצב עיקרי "חתכים מתוך CAD" — חותך לאורך קווי DXF. צירים X,Y,Z,W(סיבוב),R(הטיה).
+קלט: DXF ל-\\Dxf\\CadCut. גם CAM Offline ממחשב משרדי.
+
+פורמט DXF: AutoCAD R12. כל חתיכה = פוליליין סגור אחד (מונע באג 3-צלעות). בלי קווים כפולים/חופפים.
+סוג קו→סוג חיתוך: CONTINUOUS=רגיל, DASHEDM=TAB, POINTLINE=UTL, DOTTED=TAB+UTL, HIDDEN=מסמן תכונה.
+צבע→עדיפות: 0 ראשון…9 אחרון (נמוך=קודם).
+שכבה→עומק: בסיס 1000, עומק בשם: 1000-<מ"מ>=עובי הלוח. חריץ 8מ"מ→1000-8. שכבות: 1007 דמה, 1006 קידוחים, 1004 פרימטר.
+
+מקרא צבעים Prodim/פרוליינר (המכונה קוראת ישירות): ירוק=עיבוד(חיתוך), שחור=קיר(עיון), אדום=ארון(עיון), כחול=כיור, ורוד=כיריים, תורכיז=שקע, חום=חיבור, כתום=גרונג(46°).
+
+חומרים ופלטות: פורצלן 12מ"מ 320×160; דקטון 12מ"מ 330×150; סינטטי 20מ"מ 303×140. עומק החיתוך בקובץ חייב=עובי הלוח.
+
+סדר חיתוך (חוק הן): תמיד מהחוץ פנימה — קודם המעטפת, בסוף פתחים/חריצים, כדי שהחתיכה לא תזוז.
+וואקום: מופעל כשמשולש אזהרה צהוב עם ! מראה שהחיתוך יפגע בחתיכה שכבר נחתכה. מזיזים לכיוון מקום פנוי, בלי סיבוב, ~175-200מ"מ. יש וואקום אוטומטי. כשיש מקום—מזיזים כפול כדי לאפשר הארכות.
+הארכות: מאריכים בצד יציאת המסור (לא ההתחלה), אורך לפחות 85מ"מ (הן עושה 88), אחרת המסור יוצא בתוך החומר ופוצע (קריטי בפורצלן ודקטון).
+חריצים: חיתוך בעומק חלקי (למשל 8מ"מ בלוח 12).
+
+תקלה "Z slab < Z table": החיתוך יגיע לשולחן. תיקון: עומק חיתוך=עובי לוח; מדידת לוח מחדש; הקטן overflow; כייל Z שולחן. מניעה: התאם עומק לעובי לוח.
+
+התוכנה: קלט מ-Prodim/צילום/PDF/ידני. בוחרים חומר→עומק+פלטה אוטומטי. מחלקת ומסדרת חתיכות על הלוח, מוציאה DXF למכונה + PDF תוכנית חיתוך, ומדווחת כל שארית פנויה.`;
+let chatHistory=[];
+function toggleChat(){const pnl=document.getElementById("chatPanel");pnl.classList.toggle("chat-hidden");
+  if(!pnl.classList.contains("chat-hidden")&&chatHistory.length===0)
+    addMsg("sys","שלום 👋 אני עוזר ה-AI למכונת ה-GMM. יש לי את כל מדריך המכונה. שאל אותי על תקלות, חיתוך, סדר פעולות, וואקום, גרונג, או איך להשתמש בתוכנה.");}
+function addMsg(role,text){const b=document.getElementById("chatBody"),d=document.createElement("div");
+  d.className="msg "+(role==="user"?"u":role==="assistant"?"a":"sys");d.textContent=text;b.appendChild(d);b.scrollTop=b.scrollHeight;return d;}
+let chatImg=null; // {media_type,data}
+function clearChatImg(){chatImg=null;document.getElementById("chatAttach").style.display="none";document.getElementById("chatImg").value="";}
+async function attachChatImg(){
+  const f=document.getElementById("chatImg").files[0];if(!f)return;
+  const img=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=URL.createObjectURL(f);});
+  const MAX=1568; let{width:w,height:h}=img; if(w>MAX||h>MAX){const s=MAX/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s);}
+  const cv=document.createElement("canvas");cv.width=w;cv.height=h;cv.getContext("2d").drawImage(img,0,0,w,h);
+  chatImg={media_type:"image/jpeg",data:cv.toDataURL("image/jpeg",0.82).split(",")[1]};
+  document.getElementById("chatAttach").style.display="block";
+}
+async function sendChat(){
+  const t=document.getElementById("chatText"),q=t.value.trim();
+  if(!q&&!chatImg)return;
+  const hasImg=!!chatImg;
+  addMsg("user",(hasImg?"📷 ":"")+(q||"מה עושים?"));
+  let content;
+  if(hasImg){content=[{type:"image",source:{type:"base64",media_type:chatImg.media_type,data:chatImg.data}},{type:"text",text:q||"זו תמונה ממכונת החיתוך (אולי תקלה/שגיאה/התראה על המסך, או סקיצה). זהה מה רואים והסבר מה לעשות לפי מדריך המכונה: הסיבה, התיקון עכשיו, והמניעה."}];}
+  else content=q;
+  chatHistory.push({role:"user",content});
+  t.value="";clearChatImg();
+  const thinking=addMsg("assistant","…");
+  try{
+    const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({messages:chatHistory,max_tokens:1400})});
+    const data=await res.json();
+    if(!res.ok||data.error)throw new Error(data.message||data.error||("שגיאה "+res.status));
+    const txt=(data.text||"").trim()||"(אין תשובה)";
+    thinking.textContent=txt;chatHistory.push({role:"assistant",content:txt});
+  }catch(e){
+    thinking.className="msg sys";
+    thinking.textContent="שגיאה בחיבור לצ'אט: "+e.message;
+  }
+}
+// קריאת מידות מתמונה/PDF דרך השרת
+async function readVision(){
+  const f=document.getElementById("upFile").files[0];if(!f)return;
+  const info=document.getElementById("upInfo");
+  info.innerHTML='<div class="info">קורא את השרטוט… (עד דקה)</div>';
+  const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(f);});
+  const isPDF=f.type==="application/pdf"||f.name.toLowerCase().endsWith(".pdf");
+  const block=isPDF?{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}}
+                   :{type:"image",source:{type:"base64",media_type:f.type||"image/jpeg",data:b64}};
+  const prompt=[
+'זהו שרטוט חיתוך שיש בכתב יד. חלץ ממנו את כל החתיכות והחזר אך ורק JSON תקין, בלי שום טקסט נוסף.',
+'כללי קריאה (חשוב מאוד):',
+'1) המטבח עצמו: לרוב צורת L — צלע אחת אופקית וצלע/רגל שמתחברת אליה. לכל צלע יש אורך (יכול להיות סכום של כמה מספרים לאורכה, למשל 113.5+156=269.5) ועומק משלה. שים לב: לעומק של כל צלע יכול להיות ערך שונה.',
+'2) ציפוי קיר: חתיכות מלבניות נפרדות (בדרך כלל בחלק התחתון של הדף) שאינן חלק מהמטבח. אם רשומה להן רק מידה אחת — המספר הגדול הוא האורך והקטן הוא העומק.',
+'3) פתחים (כיור/גז/שקע): רשום פתח רק אם כתובות במפורש מידות רוחב וגובה. אם אין מידה מפורשת — אל תרשום את הפתח בכלל.',
+'4) עיבוד חזית מסומן בשתי דרכים, שתיהן זהות במשמעות: (א) שני קווים קצרים מקבילים ‖ על הצלע; (ב) קו מתולתל/גלי שנמשך לאורך הצלע. בשני המקרים אותה צלע מקבלת עיבוד חזית.',
+'5) אל תמציא מספרים. אם ערך לא ברור או חסר — השתמש ב-null ורשום שאלה בשדה questions.',
+'6) קריטי — סימון עשרוני בכתב יד: ספרה קטנה מוגבהת אחרי המספר היא הספרה שאחרי הנקודה. לדוגמה 113 עם 5 קטן למעלה = 113.5; 265 עם 5 קטן = 265.5; 141 עם 4 קטן = 141.4; 57 עם 5 קטן = 57.5. אל תתעלם מהספרה הקטנה ואל תעגל — החזר תמיד את הערך המדויק כולל העשרוני.',
+'7) עיבוד חזית: אם יש סימן ‖ או קו מתולתל על צלע של חתיכה, החזר לאותה חתיכה fe_cm = אורך העיבוד (בדרך כלל אורך הצלע) ו-fe_from_cm = מהיכן מתחיל (0 אם מההתחלה).',
+'8) פינה: אם שתי חתיכות המטבח נפגשות ויוצרות צורת L (הן מחוברות בפינה בשרטוט), החזר "corner": true. אם החתיכות נפרדות זו מזו, החזר "corner": false. האורכים שתחזיר הם תמיד המידות החיצוניות כפי שרשומות בשרטוט.',
+'9) מיקום פתח: from_left_cm = המרחק ממרכז הפתח לקצה ההתחלה של הצלע לאורכה. from_front_cm = המרחק מהחזית למרכז הפתח. גובה הפתח לא יכול להיות גדול מעומק החתיכה.',
+'מבנה ה-JSON:',
+'{"job":"שם העבודה אם כתוב או null",',
+' "kitchen":[{"label":"צלע עליונה","len":מספר|null,"depth":מספר|null,"fe_cm":מספר|null,"fe_from_cm":מספר|null,"openings":[{"kind":"כיור|גז|שקע","from_left_cm":מספר,"from_front_cm":מספר,"w":מספר,"h":מספר}]}],',
+' "cladding":[{"label":"ציפוי קיר","len":מספר|null,"depth":מספר|null,"fe_cm":מספר|null}],',
+' "corner": true|false,',
+' "questions":["שאלה קצרה בעברית על כל דבר שלא היה ברור"]}'
+].join("\n");
+  try{
+    const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({max_tokens:1600,messages:[{role:"user",content:[block,{type:"text",text:prompt}]}]})});
+    const data=await res.json();
+    if(!res.ok||data.error)throw new Error(data.message||data.error);
+    let txt=(data.text||"").replace(/```json|```/g,"").trim();
+    const m=txt.match(/\{[\s\S]*\}/); if(m)txt=m[0];
+    const j=JSON.parse(txt);
+    SKETCH={kitchen:(j.kitchen||[]),cladding:(j.cladding||[]),questions:(j.questions||[]),job:j.job||"",corner:(j.corner!==false),combo:0};
+    if(!SKETCH.kitchen.length&&!SKETCH.cladding.length){info.innerHTML='<div class="man">לא זוהו חתיכות בשרטוט. נסה תמונה חדה יותר או הזנה ידנית.</div>';return;}
+    info.innerHTML="";
+    renderSketchTable();
+  }catch(e){ info.innerHTML='<div class="man">לא הצלחתי לקרוא את השרטוט: '+e.message+'. אפשר להזין ידנית.</div>'; }
+}
+
+/* ===== טבלת אישור ועריכה — התוכנה מראה מה הבינה, שואלת, ומאפשרת לתקן ===== */
+let SKETCH=null;
+function skRow(arr,i,kind){
+  const p=arr[i];
+  const miss=(v)=>(v===null||v===undefined||v==="")?' style="border-color:#e0a03a"':'';
+  return `<tr>
+    <td style="padding:4px"><input value="${p.label||''}" oninput="SKETCH.${kind}[${i}].label=this.value" style="width:120px"></td>
+    <td style="padding:4px"><input type="number" step="0.1" value="${p.len??''}"${miss(p.len)} oninput="SKETCH.${kind}[${i}].len=parseFloat(this.value)" style="width:80px"></td>
+    <td style="padding:4px"><input type="number" step="0.1" value="${p.depth??''}"${miss(p.depth)} oninput="SKETCH.${kind}[${i}].depth=parseFloat(this.value)" style="width:80px"></td>
+    <td style="padding:4px"><input type="number" step="0.1" value="${p.fe_cm??''}" placeholder="—" oninput="SKETCH.${kind}[${i}].fe_cm=parseFloat(this.value)||null" style="width:70px"></td>
+    <td style="padding:4px">${(p.openings&&p.openings.length)?p.openings.map(o=>`${o.kind} ${o.w}×${o.h}`).join(", "):"—"}</td>
+    <td style="padding:4px"><span onclick="SKETCH.${kind}.splice(${i},1);renderSketchTable()" style="cursor:pointer;color:#e05a5a">✕</span></td>
+  </tr>`;
+}
+
+/* ===== קומבינציות פינה: כל צלע בתורה לוקחת את הפינה ===== */
+function sketchCombos(){
+  const K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
+  if(!SKETCH.corner||K.length!==2)return null;
+  const [A,B]=K;
+  const mk=(whole,other,wholeIdx)=>{
+    const cut=+(other.len-whole.depth).toFixed(2);
+    if(cut<=0)return null;
+    const w={...whole,label:(whole.label||"צלע")+" שלמה (כולל פינה)"};
+    const o={...other,len:cut,label:(other.label||"צלע")+" (מקוצרת "+whole.depth+")",
+             fe_cm:(other.fe_cm?Math.max(+(other.fe_cm-whole.depth).toFixed(2),0):other.fe_cm)};
+    return {pieces:wholeIdx===0?[w,o]:[o,w],
+            title:(whole.label||"צלע")+" שלמה",
+            note:other.len+" − "+whole.depth+" = "+cut};
+  };
+  return [mk(A,B,0),mk(B,A,1)].filter(Boolean);
+}
+function openingWarnings(){
+  const out=[];
+  [...SKETCH.kitchen,...SKETCH.cladding].forEach(p=>{
+    (p.openings||[]).forEach(o=>{
+      if(o.h&&p.depth&&o.h>p.depth)out.push("פתח "+(o.kind||"")+" בגובה "+o.h+" גדול מעומק החתיכה ("+p.depth+") — בדוק את המידה.");
+      if(o.w&&p.len&&o.w>p.len)out.push("פתח "+(o.kind||"")+" ברוחב "+o.w+" גדול מאורך החתיכה ("+p.len+").");
+    });
+  });
+  return out;
+}
+function renderSketchTable(){
+  const out=document.getElementById("out");
+  const K=SKETCH.kitchen,C=SKETCH.cladding;
+  const missing=[...K,...C].filter(p=>!p.len||!p.depth).length;
+  const qs=SKETCH.questions||[];
+  out.innerHTML=`<div class="combo">
+    <h3>מה שקראתי מהשרטוט ${SKETCH.job?("· "+SKETCH.job):""}</h3>
+    <div class="meta">בדוק, תקן מה שצריך, והוסף מה שחסר. הכל ניתן לעריכה.</div>
+    ${qs.length?`<div class="man" style="margin-top:10px"><b>שאלות:</b><br>${qs.map(q=>"• "+q).join("<br>")}</div>`:""}
+    ${(()=>{const w=openingWarnings();return w.length?`<div class="man" style="margin-top:10px"><b>שים לב:</b><br>${w.map(x=>"• "+x).join("<br>")}</div>`:"";})()}
+    ${(()=>{const cb=sketchCombos();if(!cb)return "";
+      return `<div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:12px">
+        <b>זוהתה פינה — בחר חלוקה:</b><div class="meta" style="margin:4px 0 8px">חתיכה אחת לוקחת את הפינה, השנייה מתקצרת בעומק שלה.</div>
+        ${cb.map((c,i)=>`<label style="display:block;margin:6px 0;cursor:pointer">
+          <input type="radio" name="cmb" ${SKETCH.combo===i?"checked":""} onchange="SKETCH.combo=${i};renderSketchTable()">
+          קומבינציה ${i+1} · ${c.title} <span class="meta">(${c.note})</span></label>`).join("")}
+        <label style="display:block;margin:6px 0;cursor:pointer"><input type="radio" name="cmb" ${SKETCH.combo===-1?"checked":""} onchange="SKETCH.combo=-1;renderSketchTable()"> בלי פינה — החתיכות נפרדות</label>
+      </div>`;})()}
+    ${missing?`<div class="man" style="margin-top:10px">יש ${missing} שדות חסרים (מסומנים) — נא להשלים.</div>`:""}
+    <h4 style="margin:14px 0 4px">חתיכות המטבח</h4>
+    <table style="width:100%;font-size:13px"><tr><th>תיאור</th><th>אורך</th><th>עומק</th><th>עיבוד חזית</th><th>פתחים</th><th></th></tr>
+      ${K.map((p,i)=>skRow(K,i,"kitchen")).join("")}</table>
+    <button class="btn ghost" style="margin-top:6px" onclick="SKETCH.kitchen.push({label:'חתיכה',len:null,depth:null,openings:[]});renderSketchTable()">+ הוסף חתיכת מטבח</button>
+    <h4 style="margin:14px 0 4px">ציפוי קיר</h4>
+    <table style="width:100%;font-size:13px"><tr><th>תיאור</th><th>אורך</th><th>עומק</th><th>עיבוד חזית</th><th>פתחים</th><th></th></tr>
+      ${C.map((p,i)=>skRow(C,i,"cladding")).join("")}</table>
+    <button class="btn ghost" style="margin-top:6px" onclick="SKETCH.cladding.push({label:'ציפוי קיר',len:null,depth:null,openings:[]});renderSketchTable()">+ הוסף ציפוי</button>
+    <div class="row" style="margin-top:16px"><button class="btn" style="flex:1" onclick="generateFromSketch()">צור תוכנית חיתוך + DXF ↓</button></div>
+  </div>`;
+  out.scrollIntoView({behavior:"smooth"});
+}
+async function generateFromSketch(){
+  const cb=sketchCombos();
+  let K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
+  if(cb&&SKETCH.combo>=0&&cb[SKETCH.combo])K=cb[SKETCH.combo].pieces;
+  const C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
+  if(!K.length&&!C.length){alert("נא להשלים לפחות חתיכה אחת עם אורך ועומק");return;}
+  const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
+  c.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
+  try{
+    const res=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pieces:K,cladding:C,material:MAT,job_name:SKETCH.job||""})});
+    const j=await res.json();
+    if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
+    const mat=MATERIALS[MAT];
+    c.innerHTML=`<div class="combo"><h3>התוכנית מוכנה ✓</h3>
+      <div class="meta">${j.pieces} חתיכות · ${j.slabs} לוחות · ${mat.he} · פלטה ${mat.slabL}×${mat.slabW}</div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" style="flex:2" id="spdf">הורד תוכנית חיתוך (PDF) ↓</button>
+        <button class="btn ghost" style="flex:1" id="sdxf">הורד DXF למכונה ↓</button>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>`;
+    document.getElementById("spdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
+    document.getElementById("sdxf").onclick=()=>download("cut_"+MAT+".dxf",j.dxf);
+  }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
+}
+</script></body></html>
