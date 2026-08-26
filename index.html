@@ -563,20 +563,6 @@ async function readVision(){
 
 /* ===== טבלת אישור ועריכה — התוכנה מראה מה הבינה, שואלת, ומאפשרת לתקן ===== */
 let SKETCH=null;
-function skRow(arr,i,kind){
-  const p=arr[i];
-  const miss=(v)=>(v===null||v===undefined||v==="")?' style="border-color:#e0a03a"':'';
-  return `<tr>
-    <td style="padding:4px"><input value="${p.label||''}" oninput="SKETCH.${kind}[${i}].label=this.value" style="width:120px"></td>
-    <td style="padding:4px"><input type="number" step="0.1" value="${p.len??''}"${miss(p.len)} oninput="SKETCH.${kind}[${i}].len=parseFloat(this.value)" style="width:80px"></td>
-    <td style="padding:4px"><input type="number" step="0.1" value="${p.depth??''}"${miss(p.depth)} oninput="SKETCH.${kind}[${i}].depth=parseFloat(this.value)" style="width:80px"></td>
-    <td style="padding:4px"><input type="number" step="0.1" value="${p.fe_cm??''}" placeholder="—" oninput="SKETCH.${kind}[${i}].fe_cm=parseFloat(this.value)||null" style="width:70px"></td>
-    <td style="padding:4px">${(p.openings&&p.openings.length)?p.openings.map(o=>`${o.kind} ${o.w}×${o.h}`).join(", "):"—"}</td>
-    <td style="padding:4px"><span onclick="SKETCH.${kind}.splice(${i},1);renderSketchTable()" style="cursor:pointer;color:#e05a5a">✕</span></td>
-  </tr>`;
-}
-
-/* ===== קומבינציות פינה: כל צלע בתורה לוקחת את הפינה ===== */
 function sketchCombos(){
   const K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
   if(!SKETCH.corner||K.length!==2)return null;
@@ -584,8 +570,8 @@ function sketchCombos(){
   const mk=(whole,other,wholeIdx)=>{
     const cut=+(other.len-whole.depth).toFixed(2);
     if(cut<=0)return null;
-    const w={...whole,label:(whole.label||"צלע")+" שלמה (כולל פינה)"};
-    const o={...other,len:cut,label:(other.label||"צלע")+" (מקוצרת "+whole.depth+")",
+    const w={...whole,label:(whole.label||"צלע")+" שלמה"};
+    const o={...other,len:cut,label:(other.label||"צלע")+" מקוצרת",
              fe_cm:(other.fe_cm?Math.max(+(other.fe_cm-whole.depth).toFixed(2),0):other.fe_cm)};
     return {pieces:wholeIdx===0?[w,o]:[o,w],
             title:(whole.label||"צלע")+" שלמה",
@@ -593,44 +579,120 @@ function sketchCombos(){
   };
   return [mk(A,B,0),mk(B,A,1)].filter(Boolean);
 }
-function openingWarnings(){
+/* ---- המלצות (לא חוסמות, ניתן להתעלם) ---- */
+let TIPS_OFF=false;
+function advisories(){
+  if(TIPS_OFF)return [];
   const out=[];
   [...SKETCH.kitchen,...SKETCH.cladding].forEach(p=>{
     (p.openings||[]).forEach(o=>{
-      if(o.h&&p.depth&&o.h>p.depth)out.push("פתח "+(o.kind||"")+" בגובה "+o.h+" גדול מעומק החתיכה ("+p.depth+") — בדוק את המידה.");
-      if(o.w&&p.len&&o.w>p.len)out.push("פתח "+(o.kind||"")+" ברוחב "+o.w+" גדול מאורך החתיכה ("+p.len+").");
+      if(o.h&&p.depth&&o.h>p.depth)out.push("פתח "+(o.kind||"")+" בגובה "+o.h+" גדול מעומק החתיכה ("+p.depth+").");
+      if(o.w&&p.len&&o.w>p.len)out.push("פתח "+(o.kind||"")+" ברוחב "+o.w+" גדול מאורך החתיכה.");
     });
   });
+  const mat=MATERIALS[MAT];
+  SKETCH.kitchen.forEach(p=>{ if(p.len>mat.slabL)out.push((p.label||"חתיכה")+" באורך "+p.len+" גדולה מהלוח ("+mat.slabL+") — תידרש חלוקה."); });
   return out;
 }
+/* ---- ציור חי של מה שהמערכת הבינה ---- */
+function sketchSVG(){
+  const K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
+  const C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
+  if(!K.length&&!C.length)return '<div class="meta">אין עדיין מידות להצגה</div>';
+  const COL=["#4a90a4","#c8663c","#6a8f5a","#8a6fa8","#b08a3c"];
+  let maxX=0,maxY=0; const R=[];
+  if(SKETCH.corner&&K.length===2){
+    const [A,B]=K; // A אופקית למעלה, B אנכית יורדת מימין
+    R.push({x:0,y:0,w:A.len,h:A.depth,p:A,i:0});
+    R.push({x:A.len-B.depth,y:A.depth,w:B.depth,h:B.len,p:B,i:1,rot:true});
+    maxX=A.len; maxY=A.depth+B.len;
+  }else{
+    let x=0; K.forEach((p,i)=>{ R.push({x,y:0,w:p.len,h:p.depth,p,i}); x+=p.len+20; maxY=Math.max(maxY,p.depth); });
+    maxX=Math.max(x-20,1);
+  }
+  let cy=maxY+40, cmaxX=maxX;
+  C.forEach((p,i)=>{ R.push({x:0,y:cy,w:p.len,h:p.depth,p,i:i+K.length,clad:true}); cmaxX=Math.max(cmaxX,p.len); cy+=p.depth+14; });
+  if(C.length)maxY=cy-14;
+  maxX=Math.max(maxX,cmaxX);
+  const PAD=34, VW=maxX+PAD*2, VH=maxY+PAD*2;
+  let g="";
+  R.forEach(r=>{
+    const c=COL[r.i%COL.length];
+    g+=`<rect x="${r.x+PAD}" y="${r.y+PAD}" width="${r.w}" height="${r.h}" fill="${c}" fill-opacity="0.25" stroke="${c}" stroke-width="2"/>`;
+    const fs=Math.max(11,Math.min(20,maxX/30));
+    g+=`<text x="${r.x+r.w/2+PAD}" y="${r.y+r.h/2+PAD+fs/3}" fill="#e8eaee" font-size="${fs}" text-anchor="middle" direction="ltr">${r.p.len}×${r.p.depth}</text>`;
+    if(r.p.fe_cm>0){ // עיבוד חזית — קו כתום עבה בחזית
+      if(r.rot) g+=`<line x1="${r.x+PAD+1}" y1="${r.y+PAD}" x2="${r.x+PAD+1}" y2="${r.y+Math.min(r.p.fe_cm,r.h)+PAD}" stroke="#f0a500" stroke-width="5"/>`;
+      else g+=`<line x1="${r.x+PAD}" y1="${r.y+r.h+PAD-1}" x2="${r.x+Math.min(r.p.fe_cm,r.w)+PAD}" y2="${r.y+r.h+PAD-1}" stroke="#f0a500" stroke-width="5"/>`;
+    }
+    (r.p.openings||[]).forEach(o=>{
+      if(!o.w||!o.h)return;
+      let ow=o.w,oh=o.h,ox,oy;
+      if(r.rot){ ow=o.h; oh=o.w;
+        ox=r.x+PAD+((o.from_front_cm!=null?o.from_front_cm:r.w/2)-ow/2);
+        oy=r.y+PAD+((o.from_left_cm!=null?o.from_left_cm:r.h/2)-oh/2);
+      }else{
+        ox=r.x+PAD+((o.from_left_cm!=null?o.from_left_cm:r.w/2)-ow/2);
+        oy=r.y+PAD+((o.from_front_cm!=null?o.from_front_cm:r.h/2)-oh/2);
+      }
+      ox=Math.max(r.x+PAD,Math.min(ox,r.x+PAD+r.w-ow));
+      oy=Math.max(r.y+PAD,Math.min(oy,r.y+PAD+r.h-oh));
+      g+=`<rect x="${ox}" y="${oy}" width="${ow}" height="${oh}" fill="#1b1c20" stroke="#7fb3ff" stroke-width="1.5"/>`;
+    });
+  });
+  return `<svg viewBox="0 0 ${VW} ${VH}" style="width:100%;max-height:340px" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
+}
+/* ---- טבלה מצומצמת: אורך+עומק בלבד, השאר מאחורי "עוד" ---- */
+function skRow(arr,i,kind){
+  const p=arr[i], open=(SKETCH.openRow===kind+i);
+  const miss=(v)=>(v===null||v===undefined||v==="")?' style="border-color:#e0a03a"':'';
+  const ops=(p.openings&&p.openings.length)?p.openings.map(o=>`${o.kind||"פתח"} ${o.w||"?"}×${o.h||"?"}`).join(", "):"אין";
+  return `<div style="border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input value="${p.label||''}" oninput="SKETCH.${kind}[${i}].label=this.value" style="flex:1;min-width:90px" placeholder="תיאור">
+      <input type="number" step="0.1" value="${p.len??''}"${miss(p.len)} oninput="SKETCH.${kind}[${i}].len=parseFloat(this.value);drawLive()" style="width:76px" placeholder="אורך">
+      <span class="meta">×</span>
+      <input type="number" step="0.1" value="${p.depth??''}"${miss(p.depth)} oninput="SKETCH.${kind}[${i}].depth=parseFloat(this.value);drawLive()" style="width:70px" placeholder="עומק">
+      <span onclick="SKETCH.openRow='${open?"":kind+i}';renderSketchTable()" style="cursor:pointer;color:var(--amber);font-size:13px">${open?"סגור":"עוד"}</span>
+      <span onclick="SKETCH.${kind}.splice(${i},1);renderSketchTable()" style="cursor:pointer;color:#e05a5a">✕</span>
+    </div>
+    ${open?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:13px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <span class="meta" style="width:80px">עיבוד חזית</span>
+        <input type="number" step="0.1" value="${p.fe_cm??''}" oninput="SKETCH.${kind}[${i}].fe_cm=parseFloat(this.value);drawLive()" style="width:90px" placeholder="אורך">
+      </div>
+      <div class="meta">פתחים: ${ops}</div>
+    </div>`:""}
+  </div>`;
+}
+function drawLive(){const el=document.getElementById("liveSVG");if(el)el.innerHTML=sketchSVG();}
 function renderSketchTable(){
   const out=document.getElementById("out");
   const K=SKETCH.kitchen,C=SKETCH.cladding;
   const missing=[...K,...C].filter(p=>!p.len||!p.depth).length;
-  const qs=SKETCH.questions||[];
+  const qs=SKETCH.questions||[], adv=advisories(), cb=sketchCombos();
   out.innerHTML=`<div class="combo">
-    <h3>מה שקראתי מהשרטוט ${SKETCH.job?("· "+SKETCH.job):""}</h3>
-    <div class="meta">בדוק, תקן מה שצריך, והוסף מה שחסר. הכל ניתן לעריכה.</div>
-    ${qs.length?`<div class="man" style="margin-top:10px"><b>שאלות:</b><br>${qs.map(q=>"• "+q).join("<br>")}</div>`:""}
-    ${(()=>{const w=openingWarnings();return w.length?`<div class="man" style="margin-top:10px"><b>שים לב:</b><br>${w.map(x=>"• "+x).join("<br>")}</div>`:"";})()}
-    ${(()=>{const cb=sketchCombos();if(!cb)return "";
-      return `<div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:12px">
-        <b>זוהתה פינה — בחר חלוקה:</b><div class="meta" style="margin:4px 0 8px">חתיכה אחת לוקחת את הפינה, השנייה מתקצרת בעומק שלה.</div>
-        ${cb.map((c,i)=>`<label style="display:block;margin:6px 0;cursor:pointer">
-          <input type="radio" name="cmb" ${SKETCH.combo===i?"checked":""} onchange="SKETCH.combo=${i};renderSketchTable()">
-          קומבינציה ${i+1} · ${c.title} <span class="meta">(${c.note})</span></label>`).join("")}
-        <label style="display:block;margin:6px 0;cursor:pointer"><input type="radio" name="cmb" ${SKETCH.combo===-1?"checked":""} onchange="SKETCH.combo=-1;renderSketchTable()"> בלי פינה — החתיכות נפרדות</label>
-      </div>`;})()}
-    ${missing?`<div class="man" style="margin-top:10px">יש ${missing} שדות חסרים (מסומנים) — נא להשלים.</div>`:""}
-    <h4 style="margin:14px 0 4px">חתיכות המטבח</h4>
-    <table style="width:100%;font-size:13px"><tr><th>תיאור</th><th>אורך</th><th>עומק</th><th>עיבוד חזית</th><th>פתחים</th><th></th></tr>
-      ${K.map((p,i)=>skRow(K,i,"kitchen")).join("")}</table>
-    <button class="btn ghost" style="margin-top:6px" onclick="SKETCH.kitchen.push({label:'חתיכה',len:null,depth:null,openings:[]});renderSketchTable()">+ הוסף חתיכת מטבח</button>
-    <h4 style="margin:14px 0 4px">ציפוי קיר</h4>
-    <table style="width:100%;font-size:13px"><tr><th>תיאור</th><th>אורך</th><th>עומק</th><th>עיבוד חזית</th><th>פתחים</th><th></th></tr>
-      ${C.map((p,i)=>skRow(C,i,"cladding")).join("")}</table>
-    <button class="btn ghost" style="margin-top:6px" onclick="SKETCH.cladding.push({label:'ציפוי קיר',len:null,depth:null,openings:[]});renderSketchTable()">+ הוסף ציפוי</button>
-    <div class="row" style="margin-top:16px"><button class="btn" style="flex:1" onclick="generateFromSketch()">צור תוכנית חיתוך + DXF ↓</button></div>
+    <h3>${SKETCH.job?SKETCH.job+" · ":""}זה מה שהבנתי מהשרטוט</h3>
+    <div class="meta">בדוק שהציור נראה נכון. אפשר לתקן כל מידה — הציור מתעדכן מיד.</div>
+    <div id="liveSVG" style="margin:14px 0;background:#15161a;border:1px solid var(--line);border-radius:12px;padding:10px">${sketchSVG()}</div>
+    ${missing?`<div class="man">חסרות ${missing} מידות (מסומנות) — נא להשלים.</div>`:""}
+    ${qs.length?`<div class="man" style="margin-top:8px">${qs.map(q=>"• "+q).join("<br>")}</div>`:""}
+    ${adv.length?`<div style="margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:13px">
+       <b>המלצות</b> <span onclick="TIPS_OFF=true;renderSketchTable()" style="float:left;cursor:pointer;color:var(--mut)">התעלם ✕</span><br>
+       ${adv.map(a=>"• "+a).join("<br>")}</div>`:""}
+    ${cb?`<div style="margin-top:14px">
+      <div style="font-weight:700;margin-bottom:6px">בחר חלוקה</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${cb.map((c,i)=>`<div onclick="SKETCH.combo=${i};renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===i?"var(--amber)":"var(--line)"};background:${SKETCH.combo===i?"rgba(240,165,0,.12)":"transparent"};font-size:13px">${c.title}<br><span class="meta">${c.note}</span></div>`).join("")}
+        <div onclick="SKETCH.combo=-1;renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===-1?"var(--amber)":"var(--line)"};font-size:13px">בלי פינה</div>
+      </div></div>`:""}
+    <div style="margin-top:16px;font-weight:700">חתיכות המטבח</div>
+    ${K.map((p,i)=>skRow(K,i,"kitchen")).join("")}
+    <span onclick="SKETCH.kitchen.push({label:'חתיכה',len:null,depth:null,openings:[]});renderSketchTable()" style="cursor:pointer;color:var(--amber);font-size:13px">+ הוסף חתיכה</span>
+    <div style="margin-top:16px;font-weight:700">ציפוי קיר ${C.length?"":'<span class="meta">(אין)</span>'}</div>
+    ${C.map((p,i)=>skRow(C,i,"cladding")).join("")}
+    <span onclick="SKETCH.cladding.push({label:'ציפוי קיר',len:null,depth:null,openings:[]});renderSketchTable()" style="cursor:pointer;color:var(--amber);font-size:13px">+ הוסף ציפוי</span>
+    <div class="row" style="margin-top:18px"><button class="btn" style="flex:1" onclick="generateFromSketch()">צור תוכנית חיתוך + DXF ↓</button></div>
   </div>`;
   out.scrollIntoView({behavior:"smooth"});
 }
