@@ -171,7 +171,13 @@ async function engineResult(container,payload,isProdim,file){
       <div class="row" style="margin-top:14px">
         <button class="btn" style="flex:2" id="epdf">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="edxf">הורד DXF למכונה ↓</button>
-      </div></div>`;
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button>
+        <button class="btn ghost" style="flex:1" onclick="invExport()">📊 ייצוא מלאי לאקסל</button>
+      </div>
+      <div id="invBox"></div></div>`;
+    LAST_REMNANTS=j.remnants||[];
     document.getElementById("epdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
     document.getElementById("edxf").onclick=()=>download("cut_"+MAT+".dxf",j.dxf);
     container.scrollIntoView({behavior:"smooth"});
@@ -563,6 +569,44 @@ async function readVision(){
 
 /* ===== טבלת אישור ועריכה — התוכנה מראה מה הבינה, שואלת, ומאפשרת לתקן ===== */
 let SKETCH=null;
+
+/* ================= מלאי שאריות ================= */
+const INV_KEY="stoneai_remnants_v1";
+function invLoad(){ try{return JSON.parse(localStorage.getItem(INV_KEY)||"[]");}catch(e){return [];} }
+function invSave(rows){ try{localStorage.setItem(INV_KEY,JSON.stringify(rows));return true;}catch(e){return false;} }
+let LAST_REMNANTS=null;
+function askSaveRemnants(){
+  if(!LAST_REMNANTS||!LAST_REMNANTS.length){alert("אין שאריות לשמירה בעבודה זו");return;}
+  const box=document.getElementById("invBox");
+  box.innerHTML=`<div style="border:1px solid var(--amber);border-radius:12px;padding:12px;margin-top:10px">
+    <b>שמירת שאריות למלאי</b>
+    <div class="meta" style="margin:4px 0 10px">${LAST_REMNANTS.length} שאריות: ${LAST_REMNANTS.map(r=>r.len+"×"+r.depth).join(" · ")}</div>
+    <input id="invMat" placeholder="שם החומר (למשל: קלקטה 12 מ״מ)" style="width:100%;margin-bottom:8px">
+    <textarea id="invNote" rows="2" placeholder="הערות חופשיות (אופציונלי)" style="width:100%;margin-bottom:8px"></textarea>
+    <div class="row"><button class="btn" style="flex:1" onclick="doSaveRemnants()">שמור למלאי</button>
+    <button class="btn ghost" style="flex:1" onclick="document.getElementById('invBox').innerHTML=''">ביטול</button></div>
+  </div>`;
+}
+function doSaveRemnants(){
+  const mat=(document.getElementById("invMat").value||"").trim();
+  if(!mat){alert("נא להזין שם חומר");return;}
+  const note=(document.getElementById("invNote").value||"").trim();
+  const now=new Date(), d=now.toLocaleDateString("he-IL"), t=now.toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"});
+  const job=(typeof SKETCH!=="undefined"&&SKETCH&&SKETCH.job)?SKETCH.job:"";
+  const rows=invLoad();
+  LAST_REMNANTS.forEach(r=>rows.push({date:d,time:t,material:mat,len:r.len,depth:r.depth,slab:r.slab,job:job,note:note}));
+  if(!invSave(rows)){alert("לא הצלחתי לשמור");return;}
+  document.getElementById("invBox").innerHTML=`<div class="info" style="margin-top:10px">נשמרו ${LAST_REMNANTS.length} שאריות. סה״כ במלאי: ${rows.length}. <span onclick="invExport()" style="cursor:pointer;color:var(--amber);text-decoration:underline">ייצוא לאקסל</span></div>`;
+}
+function invExport(){
+  const rows=invLoad();
+  if(!rows.length){alert("המלאי ריק — שמור שאריות מעבודה קודם");return;}
+  const head=["תאריך","שעה","חומר","אורך","עומק","לוח","עבודה","הערות"];
+  const esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+  const csv=[head.map(esc).join(",")].concat(rows.map(r=>[r.date,r.time,r.material,r.len,r.depth,r.slab,r.job,r.note].map(esc).join(","))).join("\r\n");
+  saveFile("remnants_inventory.csv", new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
+}
+
 function sketchCombos(){
   const K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
   if(!SKETCH.corner||K.length!==2)return null;
@@ -716,7 +760,13 @@ async function generateFromSketch(){
         <button class="btn" style="flex:2" id="spdf">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="sdxf">הורד DXF למכונה ↓</button>
       </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button>
+        <button class="btn ghost" style="flex:1" onclick="invExport()">📊 ייצוא מלאי לאקסל</button>
+      </div>
+      <div id="invBox"></div>
       <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>`;
+    LAST_REMNANTS=j.remnants||[];
     document.getElementById("spdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
     document.getElementById("sdxf").onclick=()=>download("cut_"+MAT+".dxf",j.dxf);
   }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
