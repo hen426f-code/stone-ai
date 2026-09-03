@@ -46,10 +46,13 @@ export async function onRequestPost({ request, env }){
       else if(Array.isArray(m.content)) lastText=m.content.filter(x=>x.type==="text").map(x=>x.text).join(" ");
       break; }
     const excerpts=pickChapters(lastText,2);
-    const system=KNOWLEDGE+(excerpts?"\n\n=== קטעים רלוונטיים ממדריך המכונה ==="+excerpts:"");
+    // מצב קריאת שרטוט: הקשר נקי לגמרי, בלי מוח הידע ובלי המדריך
+    const VISION_SYS = "אתה קורא שרטוטי מדידה של משטחי אבן בכתב יד. תפקידך היחיד: לקרוא את המספרים והצורה מהתמונה במדויק. עבוד בשני שלבים: (1) סרוק את כל התמונה ורשום לעצמך כל מספר שאתה רואה ואת מיקומו; (2) רק אז שייך כל מספר לצלע/עומק/פתח. חוקים מוחלטים: לעולם אל תמציא מספר שלא כתוב; אם ערך לא ברור או חסר החזר null ורשום שאלה; ספרה קטנה מוגבהת אחרי מספר היא השבר העשרוני (113 עם 5 מוגבה = 113.5); אל תעגל מספרים; החזר אך ורק JSON תקין בלי שום טקסט נוסף.";
+    const system = (body.mode==="vision") ? VISION_SYS
+                 : KNOWLEDGE+(excerpts?"\n\n=== קטעים רלוונטיים ממדריך המכונה ==="+excerpts:"");
     const r=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":env.ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01"},
-      body:JSON.stringify({model:body.model||"claude-sonnet-4-6",max_tokens:Math.min(body.max_tokens||1200,2000),system,messages}) });
+      body:JSON.stringify({model:body.model||"claude-sonnet-4-6",max_tokens:Math.min(body.max_tokens||1200,4000),system,messages}) });
     const data=await r.json();
     if(!r.ok) return json({error:"api_error",status:r.status,detail:data},r.status);
     const text=(data.content||[]).filter(x=>x.type==="text").map(x=>x.text).join("\n").trim();
