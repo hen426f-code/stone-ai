@@ -606,6 +606,7 @@ async function readVision(){
 '{"job":"שם העבודה אם כתוב או null",',
 ' "kitchen":[{"label":"צלע עליונה","len":מספר|null,"depth":מספר|null,"fe_cm":מספר|null,"fe_from_cm":מספר|null,"openings":[{"kind":"כיור|גז|שקע","from_left_cm":מספר,"from_front_cm":מספר,"w":מספר,"h":מספר}]}],',
 ' "cladding":[{"label":"ציפוי קיר","len":מספר|null,"depth":מספר|null,"fe_cm":מספר|null}],',
+'10) קריטי — ספרה קטנה מוגבהת: כשמופיעה ספרה קטנה מעל/אחרי מספר, היא השבר העשרוני של אותו מספר. 63 עם 5 קטנה = 63.5. 166 עם 5 קטנה = 166.5. אסור בהחלט להחזיר את הספרה הקטנה כמספר נפרד ברשימה, ואסור להתעלם ממנה — תמיד לצרף למספר שלידה.',
 ' "corner": true|false,',
 ' "numbers_seen": ["כל מספר שראית בדף, בדיוק כפי שהוא כתוב, לפי סדר קריאה"],',
 ' "questions":["שאלה קצרה בעברית על כל דבר שלא היה ברור"]}'
@@ -668,7 +669,7 @@ function invExport(){
 
 function sketchCombos(){
   const K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
-  if(!SKETCH.corner||K.length!==2)return null;
+  if(K.length!==2)return null;
   const [A,B]=K;
   const mk=(whole,other,wholeIdx)=>{
     const cut=+(other.len-whole.depth).toFixed(2);
@@ -796,6 +797,9 @@ function remnantNote(pieces){
 /* ===== תיקון והיגיון בסיסי אחרי קריאה ===== */
 function normalizeSketch(){
   const q=SKETCH.questions=SKETCH.questions||[];
+  // ספרה בודדת ברשימת המספרים = כנראה שבר עשרוני שלא צורף
+  const lone=(SKETCH.nums||[]).filter(n=>/^[0-9]$/.test(String(n).trim()));
+  if(lone.length)q.push("שים לב: זוהו ספרות בודדות ("+lone.join(", ")+") — כנראה שברים עשרוניים (למשל 63.5). בדוק את המידות והשלם ידנית אם צריך.");
   const fix=(arr,kind)=>arr.forEach(p=>{
     if(p.len>0&&p.depth>0&&p.depth>p.len){ // עומק גדול מאורך = הוחלפו
       const t=p.len; p.len=p.depth; p.depth=t;
