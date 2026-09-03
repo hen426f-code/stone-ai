@@ -84,32 +84,10 @@ canvas{width:100%;height:auto;background:#0f1013;border-radius:12px;border:1px s
 <!-- MANUAL -->
 <div id="manual" class="card hidden">
   <span class="back" onclick="home()">→ חזרה</span>
-  <h2>הזנת מידות מטבח L (ס"מ)</h2>
-  <div class="grid g3">
-    <div><label>אורך צלע ארוכה</label><input id="long" type="number" value="455"></div>
-    <div><label>אורך זרוע</label><input id="arm" type="number" value="132"></div>
-    <div><label>עומק משטח</label><input id="depth" type="number" value="64"></div>
-  </div>
-  <div class="grid g2" style="margin-top:14px">
-    <div><label>צד הזרוע</label><select id="side"><option value="left">שמאל</option><option value="right">ימין</option></select></div>
-    <div></div>
-  </div>
-  <div class="card" style="margin-top:14px;background:var(--panel2)">
-    <div class="grid g3">
-      <div><label>כיור — מרחק</label><input id="sinkPos" type="number" value="154" placeholder="ריק = ידני"></div>
-      <div><label>נמדד מ...</label><select id="sinkSide"><option value="left">שמאל</option><option value="right">ימין</option></select></div>
-      <div><label>מידה (רוחב×עומק)</label><div class="row"><input id="sinkW" type="number" value="53" style="flex:1"><input id="sinkH" type="number" value="33" style="flex:1"></div></div>
-      <div><label>מרחק מהחזית</label><input id="sinkFront" type="number" value="15" placeholder="ס"מ"></div>
-    </div>
-    <div class="grid g3" style="margin-top:12px">
-      <div><label>גז — מרחק</label><input id="gasPos" type="number" value="81" placeholder="ריק = ידני"></div>
-      <div><label>נמדד מ...</label><select id="gasSide"><option value="left">שמאל</option><option value="right" selected>ימין</option></select></div>
-      <div><label>מידה (רוחב×עומק)</label><div class="row"><input id="gasW" type="number" value="56" style="flex:1"><input id="gasH" type="number" value="49" style="flex:1"></div></div>
-      <div><label>מרחק מהחזית</label><input id="gasFront" type="number" value="8" placeholder="ס"מ"></div>
-    </div>
-  </div>
-  <button class="btn" style="margin-top:14px" onclick="runManual()">חשב קומבינציות ←</button>
-  <div class="note">פתח ללא מידה (שדה מרחק ריק) → יסומן "לפתיחה ידנית".</div>
+  <h2>צורת המטבח</h2>
+  <div class="meta">בחר את הצורה — כדי שנדע אילו מידות לבקש.</div>
+  <div id="shapePick" class="grid g3" style="margin-top:14px"></div>
+  <div id="shapeForm" style="margin-top:18px"></div>
 </div>
 
 <div id="out"></div>
@@ -176,8 +154,9 @@ async function engineResult(container,payload,isProdim,file){
         <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button>
         <button class="btn ghost" style="flex:1" onclick="invExport()">📊 ייצוא מלאי לאקסל</button>
       </div>
-      <div id="invBox"></div></div>`;
-    LAST_REMNANTS=j.remnants||[];
+      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="shareJob()">↗ שתף תוכנית</button></div>
+      <div id="invBox"></div><div id="shareBox"></div></div>`;
+    LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("epdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
     document.getElementById("edxf").onclick=()=>download("cut_"+MAT+".dxf",j.dxf);
     container.scrollIntoView({behavior:"smooth"});
@@ -439,6 +418,84 @@ function runManual(){
   const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
   engineResult(c,payload,false,null);
 }
+
+/* ================= בחירת צורת מטבח + טופס דינמי ================= */
+let KSHAPE=null;
+const SHAPES={
+  straight:{name:"ישר",svg:'<rect x="6" y="26" width="88" height="20" rx="2"/>',
+    legs:[{k:"a",label:"אורך המשטח"}]},
+  L:{name:"L",svg:'<rect x="6" y="16" width="88" height="18" rx="2"/><rect x="70" y="16" width="18" height="52" rx="2"/>',
+    legs:[{k:"a",label:"צלע ארוכה"},{k:"b",label:"זרוע"}]},
+  U:{name:"U",svg:'<rect x="6" y="12" width="88" height="16" rx="2"/><rect x="6" y="12" width="16" height="56" rx="2"/><rect x="78" y="12" width="16" height="56" rx="2"/>',
+    legs:[{k:"a",label:"צלע אמצעית"},{k:"b",label:"צלע ימין"},{k:"c",label:"צלע שמאל"}]}
+};
+function renderShapePick(){
+  const el=document.getElementById("shapePick"); if(!el)return;
+  el.innerHTML=Object.entries(SHAPES).map(([k,v])=>`
+    <div onclick="pickShape('${k}')" style="cursor:pointer;text-align:center;padding:14px;border-radius:14px;border:2px solid ${KSHAPE===k?"var(--amber)":"var(--line)"};background:${KSHAPE===k?"rgba(240,165,0,.10)":"transparent"}">
+      <svg viewBox="0 0 100 74" style="width:100%;max-width:120px;fill:${KSHAPE===k?"var(--amber)":"#8b91a0"}">${v.svg}</svg>
+      <div style="margin-top:8px;font-weight:700">${v.name}</div>
+    </div>`).join("");
+}
+function pickShape(k){KSHAPE=k;renderShapePick();renderShapeForm();}
+function renderShapeForm(){
+  const sh=SHAPES[KSHAPE]; const el=document.getElementById("shapeForm"); if(!sh){el.innerHTML="";return;}
+  el.innerHTML=`<h2 style="margin-bottom:4px">מידות — מטבח ${sh.name} (ס"מ)</h2>
+  <div class="meta">לכל צלע אורך ועומק משלה. עומק שונה? פשוט הזן ערך אחר.</div>
+  ${sh.legs.map(l=>`<div class="grid g2" style="margin-top:12px">
+     <div><label>${l.label} — אורך</label><input id="len_${l.k}" type="number" step="0.1" placeholder="אורך"></div>
+     <div><label>${l.label} — עומק</label><input id="dep_${l.k}" type="number" step="0.1" value="63"></div>
+   </div>`).join("")}
+  <div class="card" style="margin-top:16px;background:var(--panel2)">
+    <div style="font-weight:700;margin-bottom:8px">פתחים (אופציונלי — רק אם יש מידה)</div>
+    ${["sink","gas"].map(p=>`<div class="grid g3" style="margin-bottom:8px">
+      <div><label>${p==="sink"?"כיור":"גז"} — מרכז מהתחלה</label><input id="${p}Pos" type="number" step="0.1" placeholder="ריק = ללא"></div>
+      <div><label>רוחב</label><input id="${p}W" type="number" step="0.1"></div>
+      <div><label>גובה</label><input id="${p}H" type="number" step="0.1"></div>
+    </div>`).join("")}
+  </div>
+  <div class="row" style="margin-top:16px"><button class="btn" style="flex:1" onclick="runManual()">המשך →</button></div>`;
+}
+function runManual(){
+  const sh=SHAPES[KSHAPE]; if(!sh){alert("בחר קודם צורת מטבח");return;}
+  const K=[];
+  for(const l of sh.legs){
+    const L=num("len_"+l.k), D=num("dep_"+l.k);
+    if(!L||!D){alert("נא למלא אורך ועומק ל: "+l.label);return;}
+    K.push({label:l.label,len:L,depth:D,fe_cm:L,openings:[]});
+  }
+  const mkOp=(p,kind)=>{const pos=num(p+"Pos"),w=num(p+"W"),h=num(p+"H");
+    if(pos==null||!w||!h)return null;return {kind,from_left_cm:pos,from_front_cm:null,w,h};};
+  const so=mkOp("sink","כיור"), go_=mkOp("gas","גז");
+  if(so)K[0].openings.push(so);
+  if(go_)K[0].openings.push(go_);
+  SKETCH={job:"",kitchen:K,cladding:[],questions:[],corner:(KSHAPE!=="straight"),combo:0,openRow:""};
+  renderSketchTable();
+}
+/* ================= שיתוף ================= */
+let LAST_FILES={pdf:null,dxf:null};
+async function shareJob(){
+  const name=(SKETCH&&SKETCH.job)?SKETCH.job:"תוכנית חיתוך";
+  const files=[];
+  try{
+    if(LAST_FILES.pdf){const b=await (await fetch("data:application/pdf;base64,"+LAST_FILES.pdf)).blob();
+      files.push(new File([b],"cutting_plan.pdf",{type:"application/pdf"}));}
+    if(LAST_FILES.dxf)files.push(new File([LAST_FILES.dxf],"cut.dxf",{type:"application/dxf"}));
+  }catch(e){}
+  if(navigator.canShare&&files.length&&navigator.canShare({files})){
+    try{ await navigator.share({files,title:name,text:"תוכנית חיתוך · "+name}); return; }catch(e){ if(e&&e.name==="AbortError")return; }
+  }
+  const box=document.getElementById("shareBox");
+  const txt=encodeURIComponent("תוכנית חיתוך — "+name+"\nנוצר ב: "+location.origin);
+  box.innerHTML=`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px">
+    <div class="meta" style="margin-bottom:8px">הורד את הקבצים ושתף אותם:</div>
+    <div class="row">
+      <a class="btn ghost" style="flex:1;text-align:center;text-decoration:none" href="https://wa.me/?text=${txt}" target="_blank">וואטסאפ</a>
+      <a class="btn ghost" style="flex:1;text-align:center;text-decoration:none" href="mailto:?subject=${encodeURIComponent("תוכנית חיתוך — "+name)}&body=${txt}">מייל</a>
+      <button class="btn ghost" style="flex:1" onclick="navigator.clipboard.writeText(location.href);this.textContent='הועתק ✓'">העתק קישור</button>
+    </div></div>`;
+}
+
 function readProdim(){
   const f=document.getElementById("prodimFile").files[0];if(!f)return;
   document.getElementById("prodimInfo").innerHTML=`<div class="info">שולח את הקובץ למנוע…</div>`;
@@ -452,7 +509,7 @@ function renderMats(){const m=document.getElementById("mats");m.innerHTML="";
     d.onclick=()=>{MAT=k;renderMats();};m.appendChild(d);});}
 function hideAll(){["start","matcard","prodim","upload","manual"].forEach(id=>document.getElementById(id).classList.add("hidden"));document.getElementById("out").innerHTML="";}
 function home(){hideAll();document.getElementById("start").classList.remove("hidden");}
-function go(mode){MODE=mode;hideAll();
+function go(mode){MODE=mode;hideAll();if(mode==="manual"){KSHAPE=null;setTimeout(()=>{renderShapePick();renderShapeForm();},0);}
   if(mode==="manual"){document.getElementById("matcard").classList.remove("hidden");document.getElementById("manual").classList.remove("hidden");}
   else if(mode==="prodim"){document.getElementById("matcard").classList.remove("hidden");document.getElementById("prodim").classList.remove("hidden");}
   else{document.getElementById("upload").classList.remove("hidden");
@@ -710,6 +767,28 @@ function skRow(arr,i,kind){
   </div>`;
 }
 function drawLive(){const el=document.getElementById("liveSVG");if(el)el.innerHTML=sketchSVG();}
+
+/* ===== התאמת שאריות מהמלאי (חייב להיות גדול ב-2 ס"מ לפחות בשני הצדדים) ===== */
+const REM_MARGIN=2;
+function remnantFor(piece){
+  if(!piece||!piece.len||!piece.depth)return null;
+  const need_l=piece.len+REM_MARGIN, need_d=piece.depth+REM_MARGIN;
+  const rows=invLoad(); let best=null;
+  rows.forEach(r=>{
+    const L=parseFloat(r.len), D=parseFloat(r.depth); if(!L||!D)return;
+    const fits=(L>=need_l&&D>=need_d), fitsRot=(L>=need_d&&D>=need_l);
+    if(!fits&&!fitsRot)return;
+    const waste=(L*D)-(piece.len*piece.depth);
+    if(!best||waste<best.waste)best={row:r,waste,rot:(!fits&&fitsRot)};
+  });
+  return best;
+}
+function remnantNote(pieces){
+  const hits=[];
+  (pieces||[]).forEach(p=>{ const m=remnantFor(p); if(m)hits.push(`${p.len}×${p.depth} → יש שארית ${m.row.len}×${m.row.depth} (${m.row.material})${m.rot?" בסיבוב":""}`); });
+  return hits;
+}
+
 function renderSketchTable(){
   const out=document.getElementById("out");
   const K=SKETCH.kitchen,C=SKETCH.cladding;
@@ -730,6 +809,11 @@ function renderSketchTable(){
         ${cb.map((c,i)=>`<div onclick="SKETCH.combo=${i};renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===i?"var(--amber)":"var(--line)"};background:${SKETCH.combo===i?"rgba(240,165,0,.12)":"transparent"};font-size:13px">${c.title}<br><span class="meta">${c.note}</span></div>`).join("")}
         <div onclick="SKETCH.combo=-1;renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===-1?"var(--amber)":"var(--line)"};font-size:13px">בלי פינה</div>
       </div></div>`:""}
+    ${(()=>{const cbx=sketchCombos();
+      const pcs=(cbx&&SKETCH.combo>=0&&cbx[SKETCH.combo])?cbx[SKETCH.combo].pieces:K.filter(p=>p.len>0&&p.depth>0);
+      const hits=remnantNote(pcs.concat(C.filter(p=>p.len>0&&p.depth>0)));
+      return hits.length?`<div style="margin-top:12px;padding:10px;border:1px solid #4aBE82;border-radius:10px;font-size:13px">
+        <b style="color:#4aBE82">יש לך שאריות מתאימות במלאי</b><br>${hits.map(h=>"• "+h).join("<br>")}</div>`:"";})()}
     <div style="margin-top:16px;font-weight:700">חתיכות המטבח</div>
     ${K.map((p,i)=>skRow(K,i,"kitchen")).join("")}
     <span onclick="SKETCH.kitchen.push({label:'חתיכה',len:null,depth:null,openings:[]});renderSketchTable()" style="cursor:pointer;color:var(--amber);font-size:13px">+ הוסף חתיכה</span>
@@ -741,6 +825,49 @@ function renderSketchTable(){
   out.scrollIntoView({behavior:"smooth"});
 }
 async function generateFromSketch(){
+  const cbx=sketchCombos();
+  const C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
+  const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
+  if(cbx&&cbx.length){ // יש קומבינציות → מציגים את כולן ובוחרים
+    c.innerHTML='<div class="combo"><h3>מחשב את כל הקומבינציות…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
+    try{
+      const res=await fetch(ENGINE+"/api/combos",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({combos:cbx.map(x=>({title:x.title,note:x.note,pieces:x.pieces})),cladding:C,material:MAT,job_name:SKETCH.job||""})});
+      const j=await res.json();
+      if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
+      LAST_FILES={pdf:j.pdf,dxf:null};
+      const mat=MATERIALS[MAT];
+      c.innerHTML=`<div class="combo"><h3>${j.combos.length} קומבינציות מוכנות ✓</h3>
+        <div class="meta">כל הקומבינציות בקובץ אחד — השווה, ואז בחר את זו שאתה רוצה לחתוך.</div>
+        <div class="row" style="margin-top:12px"><button class="btn" style="flex:1" onclick="dlB64('combinations.pdf',LAST_FILES.pdf,'application/pdf')">הורד PDF עם כל הקומבינציות ↓</button></div>
+        <div style="margin-top:16px;font-weight:700">בחר קומבינציה ל-DXF</div>
+        ${j.combos.map((x,i)=>`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:8px">
+          <div style="font-weight:700">קומבינציה ${i+1} · ${x.title}</div>
+          <div class="meta">${x.note||""} · ${x.pieces} חתיכות · ${x.slabs} לוחות · ${x.remnants.length} שאריות</div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn" style="flex:2" onclick="pickCombo(${i})">בחר וקבל DXF ↓</button>
+          </div></div>`).join("")}
+        <div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div>
+        <div id="invBox"></div><div id="shareBox"></div></div>`;
+      COMBO_RESULTS=j.combos;
+    }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה</button></div></div>'; }
+    return;
+  }
+  return generateSimple();
+}
+let COMBO_RESULTS=null;
+function pickCombo(i){
+  const x=COMBO_RESULTS[i]; if(!x)return;
+  LAST_REMNANTS=x.remnants||[]; LAST_FILES.dxf=x.dxf;
+  download("cut_"+MAT+".dxf",x.dxf);
+  const box=document.getElementById("invBox");
+  box.innerHTML=`<div class="info" style="margin-top:12px">נבחרה קומבינציה ${i+1} · ${x.title}. הקובץ ירד.
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות</button>
+      <button class="btn ghost" style="flex:1" onclick="shareJob()">↗ שתף</button>
+    </div></div>`;
+}
+async function generateSimple(){
   const cb=sketchCombos();
   let K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
   if(cb&&SKETCH.combo>=0&&cb[SKETCH.combo])K=cb[SKETCH.combo].pieces;
@@ -764,9 +891,10 @@ async function generateFromSketch(){
         <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button>
         <button class="btn ghost" style="flex:1" onclick="invExport()">📊 ייצוא מלאי לאקסל</button>
       </div>
-      <div id="invBox"></div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="shareJob()">↗ שתף תוכנית</button></div>
+      <div id="invBox"></div><div id="shareBox"></div>
       <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>`;
-    LAST_REMNANTS=j.remnants||[];
+    LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("spdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
     document.getElementById("sdxf").onclick=()=>download("cut_"+MAT+".dxf",j.dxf);
   }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
