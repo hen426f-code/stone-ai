@@ -607,17 +607,18 @@ async function readVision(){
 ' "kitchen":[{"label":"צלע עליונה","len":מספר|null,"depth":מספר|null,"fe_cm":מספר|null,"fe_from_cm":מספר|null,"openings":[{"kind":"כיור|גז|שקע","from_left_cm":מספר,"from_front_cm":מספר,"w":מספר,"h":מספר}]}],',
 ' "cladding":[{"label":"ציפוי קיר","len":מספר|null,"depth":מספר|null,"fe_cm":מספר|null}],',
 ' "corner": true|false,',
+' "numbers_seen": ["כל מספר שראית בדף, בדיוק כפי שהוא כתוב, לפי סדר קריאה"],',
 ' "questions":["שאלה קצרה בעברית על כל דבר שלא היה ברור"]}'
 ].join("\n");
   try{
     const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({max_tokens:1600,messages:[{role:"user",content:[block,{type:"text",text:prompt}]}]})});
+      body:JSON.stringify({mode:"vision",max_tokens:3000,messages:[{role:"user",content:[block,{type:"text",text:prompt}]}]})});
     const data=await res.json();
     if(!res.ok||data.error)throw new Error(data.message||data.error);
     let txt=(data.text||"").replace(/```json|```/g,"").trim();
     const m=txt.match(/\{[\s\S]*\}/); if(m)txt=m[0];
     const j=JSON.parse(txt);
-    SKETCH={kitchen:(j.kitchen||[]),cladding:(j.cladding||[]),questions:(j.questions||[]),job:j.job||"",corner:(j.corner!==false),combo:0};
+    SKETCH={kitchen:(j.kitchen||[]),cladding:(j.cladding||[]),questions:(j.questions||[]),job:j.job||"",corner:(j.corner!==false),combo:0,openRow:"",nums:(j.numbers_seen||[])};
     if(!SKETCH.kitchen.length&&!SKETCH.cladding.length){info.innerHTML='<div class="man">לא זוהו חתיכות בשרטוט. נסה תמונה חדה יותר או הזנה ידנית.</div>';return;}
     info.innerHTML="";
     renderSketchTable();
@@ -799,6 +800,7 @@ function renderSketchTable(){
     <div class="meta">בדוק שהציור נראה נכון. אפשר לתקן כל מידה — הציור מתעדכן מיד.</div>
     <div id="liveSVG" style="margin:14px 0;background:#15161a;border:1px solid var(--line);border-radius:12px;padding:10px">${sketchSVG()}</div>
     ${missing?`<div class="man">חסרות ${missing} מידות (מסומנות) — נא להשלים.</div>`:""}
+    ${(SKETCH.nums&&SKETCH.nums.length)?`<div style="margin-top:8px;font-size:12px" class="meta">מספרים שזיהיתי בדף: ${SKETCH.nums.join(" · ")}</div>`:""}
     ${qs.length?`<div class="man" style="margin-top:8px">${qs.map(q=>"• "+q).join("<br>")}</div>`:""}
     ${adv.length?`<div style="margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:13px">
        <b>המלצות</b> <span onclick="TIPS_OFF=true;renderSketchTable()" style="float:left;cursor:pointer;color:var(--mut)">התעלם ✕</span><br>
