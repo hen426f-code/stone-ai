@@ -621,6 +621,7 @@ async function readVision(){
     SKETCH={kitchen:(j.kitchen||[]),cladding:(j.cladding||[]),questions:(j.questions||[]),job:j.job||"",corner:(j.corner!==false),combo:0,openRow:"",nums:(j.numbers_seen||[])};
     if(!SKETCH.kitchen.length&&!SKETCH.cladding.length){info.innerHTML='<div class="man">לא זוהו חתיכות בשרטוט. נסה תמונה חדה יותר או הזנה ידנית.</div>';return;}
     info.innerHTML="";
+    normalizeSketch();
     renderSketchTable();
   }catch(e){ info.innerHTML='<div class="man">לא הצלחתי לקרוא את השרטוט: '+e.message+'. אפשר להזין ידנית.</div>'; }
 }
@@ -672,12 +673,13 @@ function sketchCombos(){
   const mk=(whole,other,wholeIdx)=>{
     const cut=+(other.len-whole.depth).toFixed(2);
     if(cut<=0)return null;
+    const suspect=(cut<20)?("החתיכה שיוצאת קטנה מאוד ("+cut+" ס\"מ) — בדוק שהעומק "+whole.depth+" נקרא נכון"):null;
     const w={...whole,label:(whole.label||"צלע")+" שלמה"};
     const o={...other,len:cut,label:(other.label||"צלע")+" מקוצרת",
              fe_cm:(other.fe_cm?Math.max(+(other.fe_cm-whole.depth).toFixed(2),0):other.fe_cm)};
     return {pieces:wholeIdx===0?[w,o]:[o,w],
             title:(whole.label||"צלע")+" שלמה",
-            note:other.len+" − "+whole.depth+" = "+cut};
+            note:other.len+" − "+whole.depth+" = "+cut, suspect};
   };
   return [mk(A,B,0),mk(B,A,1)].filter(Boolean);
 }
@@ -790,6 +792,20 @@ function remnantNote(pieces){
   return hits;
 }
 
+
+/* ===== תיקון והיגיון בסיסי אחרי קריאה ===== */
+function normalizeSketch(){
+  const q=SKETCH.questions=SKETCH.questions||[];
+  const fix=(arr,kind)=>arr.forEach(p=>{
+    if(p.len>0&&p.depth>0&&p.depth>p.len){ // עומק גדול מאורך = הוחלפו
+      const t=p.len; p.len=p.depth; p.depth=t;
+      q.push("החלפתי אורך/עומק ב"+(p.label||"חתיכה")+" (העומק היה גדול מהאורך) — בדוק.");
+    }
+    if(p.depth>140){ q.push((p.label||"חתיכה")+": עומק "+p.depth+" נראה גבוה מדי לעומק משטח — בדוק שזה לא אורך."); }
+  });
+  fix(SKETCH.kitchen,"kitchen"); fix(SKETCH.cladding,"cladding");
+}
+
 function renderSketchTable(){
   const out=document.getElementById("out");
   const K=SKETCH.kitchen,C=SKETCH.cladding;
@@ -808,7 +824,7 @@ function renderSketchTable(){
     ${cb?`<div style="margin-top:14px">
       <div style="font-weight:700;margin-bottom:6px">בחר חלוקה</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${cb.map((c,i)=>`<div onclick="SKETCH.combo=${i};renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===i?"var(--amber)":"var(--line)"};background:${SKETCH.combo===i?"rgba(240,165,0,.12)":"transparent"};font-size:13px">${c.title}<br><span class="meta">${c.note}</span></div>`).join("")}
+        ${cb.map((c,i)=>`<div onclick="SKETCH.combo=${i};renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===i?"var(--amber)":"var(--line)"};background:${SKETCH.combo===i?"rgba(240,165,0,.12)":"transparent"};font-size:13px">${c.title}<br><span class="meta">${c.note}</span>${c.suspect?`<br><span style="color:#e0a03a;font-size:11px">⚠ ${c.suspect}</span>`:""}</div>`).join("")}
         <div onclick="SKETCH.combo=-1;renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===-1?"var(--amber)":"var(--line)"};font-size:13px">בלי פינה</div>
       </div></div>`:""}
     ${(()=>{const cbx=sketchCombos();
