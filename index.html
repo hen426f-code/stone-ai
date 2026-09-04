@@ -498,9 +498,16 @@ async function shareJob(){
 
 function readProdim(){
   const f=document.getElementById("prodimFile").files[0];if(!f)return;
-  document.getElementById("prodimInfo").innerHTML=`<div class="info">שולח את הקובץ למנוע…</div>`;
-  const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
-  engineResult(c,null,true,f);
+  document.getElementById("prodimInfo").innerHTML=`<div class="info">קורא את קובץ המודד…</div>`;
+  const fd=new FormData();fd.append("file",f);fd.append("material",MAT);
+  fetch(ENGINE+"/api/prodim",{method:"POST",body:fd}).then(r=>r.json()).then(j=>{
+    if(!j.ok)throw new Error(j.error||"שגיאה");
+    const K=(j.pieces_list||[]).map(p=>({label:p.label,len:p.len,depth:p.depth,openings:p.openings||[]}));
+    if(!K.length)throw new Error("לא זוהו חתיכות בקובץ");
+    document.getElementById("prodimInfo").innerHTML="";
+    SKETCH={job:"קובץ מודד",kitchen:K,cladding:[],questions:[],corner:false,combo:0,openRow:"",nums:[],fromProdim:true};
+    normalizeSketch(); renderSketchTable();
+  }).catch(e=>{document.getElementById("prodimInfo").innerHTML='<div class="man">'+e.message+'</div>';});
 }
 /* ---- navigation ---- */
 function renderMats(){const m=document.getElementById("mats");m.innerHTML="";
@@ -667,7 +674,37 @@ function invExport(){
   saveFile("remnants_inventory.csv", new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
 }
 
+
+/* ===== חתיכה ארוכה מהלוח → אפשרויות חלוקה ===== */
+function splitCombos(){
+  const mat=MATERIALS[MAT], maxL=mat.slabL-1;
+  const K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
+  const idx=K.findIndex(p=>p.len>maxL);
+  if(idx<0)return null;
+  const p=K[idx], others=K.filter((_,i)=>i!==idx), opts=[];
+  const mkPieces=(cuts,label)=>{
+    const parts=cuts.map((L,i)=>({...p,len:+L.toFixed(1),label:(p.label||"חתיכה")+" ח"+(i+1),
+      openings:(p.openings||[]).filter(o=>{
+        const from=cuts.slice(0,i).reduce((a,b)=>a+b,0);
+        return o.from_left_cm>=from && o.from_left_cm<from+L;})
+        .map(o=>({...o,from_left_cm:o.from_left_cm-cuts.slice(0,i).reduce((a,b)=>a+b,0)}))}));
+    return {pieces:others.concat(parts),title:label,
+            note:parts.map(x=>x.len).join(" + ")+" = "+p.len};
+  };
+  // א. שני חצאים שווים
+  opts.push(mkPieces([p.len/2,p.len/2],"שני חצאים שווים"));
+  // ב. חתיכה מקסימלית + שארית
+  if(p.len-maxL>20)opts.push(mkPieces([maxL,p.len-maxL],"מקסימום מלוח אחד + השלמה"));
+  // ג. חיבור במרכז פתח (הכי מוסתר)
+  (p.openings||[]).forEach(o=>{
+    if(o.from_left_cm>30&&o.from_left_cm<p.len-30&&o.from_left_cm<=maxL&&(p.len-o.from_left_cm)<=maxL)
+      opts.push(mkPieces([o.from_left_cm,p.len-o.from_left_cm],"חיבור במרכז ה"+(o.kind||"פתח")+" (מוסתר)"));
+  });
+  return opts.filter(o=>o.pieces.every(x=>x.len<=maxL));
+}
+
 function sketchCombos(){
+  const sp=splitCombos(); if(sp&&sp.length)return sp;
   const K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
   if(K.length!==2)return null;
   const [A,B]=K;
