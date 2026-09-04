@@ -448,10 +448,16 @@ function renderShapeForm(){
    </div>`).join("")}
   <div class="card" style="margin-top:16px;background:var(--panel2)">
     <div style="font-weight:700;margin-bottom:8px">פתחים (אופציונלי — רק אם יש מידה)</div>
-    ${["sink","gas"].map(p=>`<div class="grid g3" style="margin-bottom:8px">
-      <div><label>${p==="sink"?"כיור":"גז"} — מרכז מהתחלה</label><input id="${p}Pos" type="number" step="0.1" placeholder="ריק = ללא"></div>
-      <div><label>רוחב</label><input id="${p}W" type="number" step="0.1"></div>
-      <div><label>גובה</label><input id="${p}H" type="number" step="0.1"></div>
+    ${["sink","gas","elec"].map(p=>`<div style="margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:4px">${p==="sink"?"כיור":p==="gas"?"גז":"חשמל"}</div>
+      <div class="grid g2">
+        <div><label>מרכז מהתחלה</label><input id="${p}Pos" type="number" step="0.1" placeholder="ריק = ללא"></div>
+        <div><label>מרחק מהחזית</label><input id="${p}Front" type="number" step="0.1" placeholder="למשל 8"></div>
+      </div>
+      <div class="grid g2" style="margin-top:6px">
+        <div><label>רוחב</label><input id="${p}W" type="number" step="0.1"></div>
+        <div><label>גובה</label><input id="${p}H" type="number" step="0.1"></div>
+      </div>
     </div>`).join("")}
   </div>
   <div class="row" style="margin-top:16px"><button class="btn" style="flex:1" onclick="runManual()">המשך →</button></div>`;
@@ -464,11 +470,14 @@ function runManual(){
     if(!L||!D){alert("נא למלא אורך ועומק ל: "+l.label);return;}
     K.push({label:l.label,len:L,depth:D,fe_cm:L,openings:[]});
   }
-  const mkOp=(p,kind)=>{const pos=num(p+"Pos"),w=num(p+"W"),h=num(p+"H");
-    if(pos==null||!w||!h)return null;return {kind,from_left_cm:pos,from_front_cm:null,w,h};};
-  const so=mkOp("sink","כיור"), go_=mkOp("gas","גז");
-  if(so)K[0].openings.push(so);
-  if(go_)K[0].openings.push(go_);
+  const mkOp=(p,kind)=>{const pos=num(p+"Pos"),w=num(p+"W"),h=num(p+"H"),fr=num(p+"Front");
+    if(pos==null||!w||!h)return null;
+    // מרחק מהחזית = מהחזית עד הקצה התחתון של הפתח; ממירים למרכז הפתח
+    const fromFront=(fr!=null)?(fr+h/2):null;
+    return {kind,from_left_cm:pos,from_front_cm:fromFront,w,h};};
+  [["sink","כיור"],["gas","גז"],["elec","חשמל"]].forEach(([p,kind])=>{
+    const o=mkOp(p,kind); if(o)K[0].openings.push(o);
+  });
   SKETCH={job:"",kitchen:K,cladding:[],questions:[],corner:(KSHAPE!=="straight"),combo:0,openRow:""};
   renderSketchTable();
 }
@@ -804,6 +813,10 @@ function skRow(arr,i,kind){
         <input type="number" step="0.1" value="${p.fe_cm??''}" oninput="SKETCH.${kind}[${i}].fe_cm=parseFloat(this.value);drawLive()" style="width:90px" placeholder="אורך">
       </div>
       <div class="meta">פתחים: ${ops}</div>
+      ${(p.openings||[]).map((o,oi)=>`<div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+        <span class="meta" style="width:80px">${o.kind||"פתח"} — מהחזית</span>
+        <input type="number" step="0.1" value="${o.from_front_cm!=null?(o.from_front_cm-(o.h||0)/2):''}" oninput="SKETCH.${kind}[${i}].openings[${oi}].from_front_cm=parseFloat(this.value)+(${o.h||0})/2;drawLive()" style="width:90px">
+      </div>`).join("")}
     </div>`:""}
   </div>`;
 }
