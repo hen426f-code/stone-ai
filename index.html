@@ -644,7 +644,8 @@ async function readVision(){
 '{"job":"שם העבודה אם כתוב או null",',
 ' "kitchen":[{"label":"צלע עליונה","len":מספר|null,"depth":מספר|null,"fe_cm":מספר|null,"fe_from_cm":מספר|null,"openings":[{"kind":"כיור|גז|שקע","from_left_cm":מספר,"from_front_cm":מספר,"w":מספר,"h":מספר}]}],',
 ' "cladding":[{"label":"ציפוי קיר","len":מספר|null,"depth":מספר|null,"fe_cm":מספר|null}],',
-'10) קריטי — ספרה קטנה מוגבהת: כשמופיעה ספרה קטנה מעל/אחרי מספר, היא השבר העשרוני של אותו מספר. 63 עם 5 קטנה = 63.5. 166 עם 5 קטנה = 166.5. אסור בהחלט להחזיר את הספרה הקטנה כמספר נפרד ברשימה, ואסור להתעלם ממנה — תמיד לצרף למספר שלידה.',
+'10) קריטי — ספרה קטנה מוגבהת = השבר העשרוני. הכלל חל על כל מספר בכל גודל, גם דו-ספרתי: 14 עם 8 מוגבהת = 14.8 (ולא 148!). 109 עם 3 מוגבהת = 109.3. 124 עם 5 מוגבהת = 124.5. 63 עם 5 = 63.5. לעולם אל תצמיד את הספרה המוגבהת כספרה רגילה ואל תיצור ממנה מספר תלת-ספרתי. אל תחזיר אותה כמספר נפרד ואל תתעלם ממנה.',
+'11) סימוני עיבוד לפי מספר הקווים: שני קווים קצרים מקבילים ‖ = עיבוד חזית. שלושה קווים קצרים מקבילים ⦀ = גרונג (חיתוך בזווית 46 מעלות). קו מתולתל/גלי לאורך צלע = עיבוד חזית. לכל חתיכה החזר שדה edges עם הצלעות המסומנות, למשל: "edges":{"front":"fe","right":"mitre"} — הערכים האפשריים: front, back, left, right, והסוג fe או mitre.',
 ' "corner": true|false,',
 ' "numbers_seen": ["כל מספר שראית בדף, בדיוק כפי שהוא כתוב, לפי סדר קריאה"],',
 ' "questions":["שאלה קצרה בעברית על כל דבר שלא היה ברור"]}'
@@ -657,7 +658,7 @@ async function readVision(){
     let txt=(data.text||"").replace(/```json|```/g,"").trim();
     const m=txt.match(/\{[\s\S]*\}/); if(m)txt=m[0];
     const j=JSON.parse(txt);
-    SKETCH={kitchen:(j.kitchen||[]),cladding:(j.cladding||[]),questions:(j.questions||[]),job:j.job||"",corner:(j.corner!==false),combo:0,openRow:"",nums:(j.numbers_seen||[])};
+    SKETCH={kitchen:(j.kitchen||[]).map(p=>({...p,edges:p.edges||{}})),cladding:(j.cladding||[]).map(p=>({...p,edges:p.edges||{}})),questions:(j.questions||[]),job:j.job||"",corner:(j.corner!==false),combo:0,openRow:"",nums:(j.numbers_seen||[])};
     if(!SKETCH.kitchen.length&&!SKETCH.cladding.length){info.innerHTML='<div class="man">לא זוהו חתיכות בשרטוט. נסה תמונה חדה יותר או הזנה ידנית.</div>';return;}
     info.innerHTML="";
     normalizeSketch();
@@ -877,7 +878,11 @@ function normalizeSketch(){
       const t=p.len; p.len=p.depth; p.depth=t;
       q.push("החלפתי אורך/עומק ב"+(p.label||"חתיכה")+" (העומק היה גדול מהאורך) — בדוק.");
     }
-    if(p.depth>140){ q.push((p.label||"חתיכה")+": עומק "+p.depth+" נראה גבוה מדי לעומק משטח — בדוק שזה לא אורך."); }
+    if(p.depth>140){ q.push((p.label||"חתיכה")+": עומק "+p.depth+" נראה גבוה מדי — בדוק שזה לא אורך, או שברח שבר עשרוני (למשל 148 במקום 14.8)."); }
+    [["len",p.len],["depth",p.depth]].forEach(([k,v])=>{
+      if(v&&v>=100&&v<1000&&Number.isInteger(v)&&(v/10)<100&&(v%10)!==0){
+        q.push((p.label||"חתיכה")+": "+v+" — ייתכן שזה "+(v/10)+" (ספרה מוגבהת שנקראה כספרה רגילה). בדוק.");}
+    });
   });
   fix(SKETCH.kitchen,"kitchen"); fix(SKETCH.cladding,"cladding");
 }
@@ -926,7 +931,7 @@ async function generateFromSketch(){
     c.innerHTML='<div class="combo"><h3>מחשב את כל הקומבינציות…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
     try{
       const res=await fetch(ENGINE+"/api/combos",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({combos:cbx.map(x=>({title:x.title,note:x.note,pieces:x.pieces})),cladding:C,material:MAT,job_name:SKETCH.job||""})});
+        body:JSON.stringify({combos:cbx.map(x=>({title:x.title,note:x.note,pieces:x.pieces.map(p=>({...p,edges:p.edges||{}}))})),cladding:C,material:MAT,job_name:SKETCH.job||""})});
       const j=await res.json();
       if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
       LAST_FILES={pdf:j.pdf,dxf:null};
@@ -971,7 +976,7 @@ async function generateSimple(){
   c.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
   try{
     const res=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({pieces:K,cladding:C,material:MAT,job_name:SKETCH.job||""})});
+      body:JSON.stringify({pieces:K.map(p=>({...p,edges:p.edges||{}})),cladding:C.map(p=>({...p,edges:p.edges||{}})),material:MAT,job_name:SKETCH.job||""})});
     const j=await res.json();
     if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
     const mat=MATERIALS[MAT];
