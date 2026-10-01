@@ -165,7 +165,8 @@ async function engineResult(container,payload,isProdim,file){
     if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
     const mat=MATERIALS[MAT];
     const info=isProdim?`${j.pieces} חתיכות · ${j.slabs} לוחות`:`${j.combos} קומבינציות · ${j.slabs} לוחות`;
-    const mitre=(isProdim&&j.mitre)?'<div class="man">שים לב: יש בקובץ חיתוכי גרונג (46°).</div>':'';
+    const mitre=((isProdim&&j.mitre)?'<div class="man">שים לב: יש בקובץ חיתוכי גרונג (46°).</div>':'')+
+      ((j.warnings&&j.warnings.length)?'<div class="man">'+j.warnings.map(w=>"• "+w).join("<br>")+'</div>':'');
     container.innerHTML=`<div class="combo"><h3>התוכנית מוכנה ✓</h3>
       <div class="meta">${info} · ${mat.he} · פלטה ${mat.slabL}×${mat.slabW}</div>${mitre}
       <div class="row" style="margin-top:14px">
@@ -532,11 +533,12 @@ function readProdim(){
   document.getElementById("prodimInfo").innerHTML=`<div class="info">קורא את קובץ המודד…</div>`;
   const fd=new FormData();fd.append("file",f);fd.append("material",MAT);
   fetch(ENGINE+"/api/prodim",{method:"POST",body:fd}).then(r=>r.json()).then(j=>{
-    if(!j.ok)throw new Error(j.error||"שגיאה");
-    const K=(j.pieces_list||[]).map(p=>({label:p.label,len:p.len,depth:p.depth,openings:p.openings||[]}));
+    if(!j.ok)throw new Error((j.error||"שגיאה")+((j.warnings&&j.warnings.length)?"<br>"+j.warnings.map(w=>"• "+w).join("<br>"):""));
+    // outline = המתאר המדויק מהמודד; נשלח חזרה למנוע כדי שקובץ המכונה יחתוך את הצורה האמיתית
+    const K=(j.pieces_list||[]).map(p=>({label:p.label,len:p.len,depth:p.depth,openings:p.openings||[],outline:p.outline,outline_pts:p.outline_pts}));
     if(!K.length)throw new Error("לא זוהו חתיכות בקובץ");
     document.getElementById("prodimInfo").innerHTML="";
-    SKETCH={job:"קובץ מודד",kitchen:K,cladding:[],questions:[],corner:false,combo:0,openRow:"",nums:[],fromProdim:true};
+    SKETCH={job:"קובץ מודד",kitchen:K,cladding:[],questions:(j.warnings||[]).slice(),corner:false,combo:0,openRow:"",nums:[],fromProdim:true};
     normalizeSketch(); renderSketchTable();
   }).catch(e=>{document.getElementById("prodimInfo").innerHTML='<div class="man">'+e.message+'</div>';});
 }
@@ -877,6 +879,7 @@ function normalizeSketch(){
   const lone=(SKETCH.nums||[]).filter(n=>/^[0-9]$/.test(String(n).trim()));
   if(lone.length)q.push("שים לב: זוהו ספרות בודדות ("+lone.join(", ")+") — כנראה שברים עשרוניים (למשל 63.5). בדוק את המידות והשלם ידנית אם צריך.");
   const fix=(arr,kind)=>arr.forEach(p=>{
+    if(SKETCH.fromProdim)return; // בקובץ מודד המידות מדויקות — בדיקות קריאת כתב יד לא רלוונטיות
     if(p.len>0&&p.depth>0&&p.depth>p.len){ // עומק גדול מאורך = הוחלפו
       const t=p.len; p.len=p.depth; p.depth=t;
       q.push("החלפתי אורך/עומק ב"+(p.label||"חתיכה")+" (העומק היה גדול מהאורך) — בדוק.");
