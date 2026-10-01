@@ -38,6 +38,9 @@ input:focus,select:focus{outline:none;border-color:var(--amber)}
 canvas{width:100%;height:auto;background:#0f1013;border-radius:12px;border:1px solid var(--line);display:block}
 .stats{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0;font-size:13px}.stats b{color:var(--amber)}
 .chip{display:inline-block;background:#2a2620;color:var(--amber);border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:600;margin:2px}
+.chk{background:#fff8e6;border:1px solid #f0d58a;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#6b4e00;margin-top:8px}
+.chk.ok{background:#e9f7ef;border-color:#a8dcbf;color:#14663f}
+.chk.bad{background:#fdecec;border-color:#f0a8a8;color:#8a1c1c}
 .note{font-size:12px;color:var(--mut);margin-top:8px}
 .man{background:#2a1e1e;border:1px solid #5a2b2b;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#f0b0b0;margin-top:8px}
 .info{background:#1e2630;border:1px solid #2c3d4d;border-radius:10px;padding:11px 13px;font-size:12.5px;color:#bcd3e6;margin-top:10px}
@@ -155,6 +158,20 @@ let MAT="porcelan", MODE=null, PRODIM_PIECES=null;
 /* ---- מנוע ה-PDF/DXF (Render) ---- */
 const ENGINE="https://stone-ai-engine.onrender.com";
 function dlB64(name,b64,mime){const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);saveFile(name,new Blob([arr],{type:mime}));}
+/* בודק לפני חיתוך: בעיות ודאיות באדום, דברים לבדיקה בצהוב, וניצול הלוחות */
+function checkHtml(ch){
+  if(!ch)return "";
+  const u=ch.usage||{};let h="";
+  if(ch.errors&&ch.errors.length)h+='<div class="chk bad"><b>לפני חיתוך: '+ch.errors.length+' בעיות שחייבים לתקן</b><br>'+ch.errors.map(e=>"• "+e).join("<br>")+'</div>';
+  if(ch.warnings&&ch.warnings.length)h+='<div class="chk"><b>לבדיקה</b><br>'+ch.warnings.map(w=>"• "+w).join("<br>")+'</div>';
+  if(!h)h='<div class="chk ok">✓ הבדיקה לפני חיתוך עברה: החתיכות נכנסות בלוחות, והפתחים בתוך החתיכות בלי חפיפה.</div>';
+  if(u.slabs)h+='<div class="note">ניצול הלוחות: '+u.used_pct+'% · '+u.pieces_m2+' מ״ר חתיכות מתוך '+u.slabs_m2+' מ״ר לוחות · '+u.waste_m2+' מ״ר לא נוצלו (חלקם שאריות למלאי)</div>';
+  return h;
+}
+function dxfGuard(ch){
+  if(ch&&ch.errors&&ch.errors.length)return confirm("בבדיקה לפני חיתוך נמצאו "+ch.errors.length+" בעיות. קובץ כזה ייחתך לא נכון. להוריד בכל זאת?");
+  return true;
+}
 async function engineResult(container,payload,isProdim,file){
   container.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">מפיק PDF מקצועי + DXF למכונה. בפעם הראשונה זה עלול לקחת עד דקה (השרת מתעורר).</div></div>';
   try{
@@ -168,7 +185,7 @@ async function engineResult(container,payload,isProdim,file){
     const mitre=((isProdim&&j.mitre)?'<div class="man">שים לב: יש בקובץ חיתוכי גרונג (46°).</div>':'')+
       ((j.warnings&&j.warnings.length)?'<div class="man">'+j.warnings.map(w=>"• "+w).join("<br>")+'</div>':'');
     container.innerHTML=`<div class="combo"><h3>התוכנית מוכנה ✓</h3>
-      <div class="meta">${info} · ${mat.he} · פלטה ${mat.slabL}×${mat.slabW}</div>${mitre}
+      <div class="meta">${info} · ${mat.he} · פלטה ${mat.slabL}×${mat.slabW}</div>${checkHtml(j.check)}${mitre}
       <div class="row" style="margin-top:14px">
         <button class="btn" style="flex:2" id="epdf">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="edxf">הורד DXF למכונה ↓</button>
@@ -181,7 +198,7 @@ async function engineResult(container,payload,isProdim,file){
       <div id="invBox"></div><div id="shareBox"></div></div>`;
     LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("epdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
-    document.getElementById("edxf").onclick=()=>download("cut_"+MAT+".dxf",j.dxf);
+    document.getElementById("edxf").onclick=()=>{if(dxfGuard(j.check))download("cut_"+MAT+".dxf",j.dxf);};
     container.scrollIntoView({behavior:"smooth"});
   }catch(e){container.innerHTML=`<div class="combo"><h3>שגיאה ביצירת התוכנית</h3><div class="man">${e.message}. נסה שוב בעוד רגע.</div></div>`;}
 }
@@ -958,7 +975,7 @@ async function generateFromSketch(){
         <div style="margin-top:16px;font-weight:700">בחר קומבינציה ל-DXF</div>
         ${j.combos.map((x,i)=>`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:8px">
           <div style="font-weight:700">קומבינציה ${i+1} · ${x.title}</div>
-          <div class="meta">${x.note||""} · ${x.pieces} חתיכות · ${x.slabs} לוחות · ${x.remnants.length} שאריות</div>
+          <div class="meta">${x.note||""} · ${x.pieces} חתיכות · ${x.slabs} לוחות · ${x.remnants.length} שאריות${x.check&&x.check.usage?" · ניצול "+x.check.usage.used_pct+"%":""}${x.check&&x.check.errors&&x.check.errors.length?' · <span style="color:#b42318;font-weight:700">'+x.check.errors.length+' בעיות</span>':""}</div>
           <div class="row" style="margin-top:8px">
             <button class="btn" style="flex:2" onclick="pickCombo(${i})">בחר וקבל DXF ↓</button>
           </div></div>`).join("")}
@@ -973,10 +990,11 @@ async function generateFromSketch(){
 let COMBO_RESULTS=null;
 function pickCombo(i){
   const x=COMBO_RESULTS[i]; if(!x)return;
+  const box=document.getElementById("invBox");
+  if(!dxfGuard(x.check)){box.innerHTML=checkHtml(x.check);return;}
   LAST_REMNANTS=x.remnants||[]; LAST_FILES.dxf=x.dxf;
   download("cut_"+MAT+".dxf",x.dxf);
-  const box=document.getElementById("invBox");
-  box.innerHTML=`<div class="info" style="margin-top:12px">נבחרה קומבינציה ${i+1} · ${x.title}. הקובץ ירד.
+  box.innerHTML=`<div class="info" style="margin-top:12px">נבחרה קומבינציה ${i+1} · ${x.title}. הקובץ ירד.${checkHtml(x.check)}
     <div class="row" style="margin-top:10px">
       <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות</button>
       <button class="btn ghost" style="flex:1" onclick="shareJob()">↗ שתף</button>
@@ -997,7 +1015,7 @@ async function generateSimple(){
     if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
     const mat=MATERIALS[MAT];
     c.innerHTML=`<div class="combo"><h3>התוכנית מוכנה ✓</h3>
-      <div class="meta">${j.pieces} חתיכות · ${j.slabs} לוחות · ${mat.he} · פלטה ${mat.slabL}×${mat.slabW}</div>
+      <div class="meta">${j.pieces} חתיכות · ${j.slabs} לוחות · ${mat.he} · פלטה ${mat.slabL}×${mat.slabW}</div>${checkHtml(j.check)}
       <div class="row" style="margin-top:14px">
         <button class="btn" style="flex:2" id="spdf">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="sdxf">הורד DXF למכונה ↓</button>
@@ -1011,7 +1029,7 @@ async function generateSimple(){
       <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>`;
     LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("spdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
-    document.getElementById("sdxf").onclick=()=>download("cut_"+MAT+".dxf",j.dxf);
+    document.getElementById("sdxf").onclick=()=>{if(dxfGuard(j.check))download("cut_"+MAT+".dxf",j.dxf);};
   }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
 }
 </script></body></html>
