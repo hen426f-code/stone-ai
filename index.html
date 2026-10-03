@@ -945,6 +945,9 @@ function renderSketchTable(){
     <div class="row" style="margin-top:18px"><button class="btn" style="flex:1" onclick="generateFromSketch()">צור תוכנית חיתוך + DXF ↓</button></div>
     <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderQuote()">💰 הצעת מחיר ללקוח</button></div>
     <div id="quoteBox"></div>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="basketAdd()">🧺 הוסף לחיתוך משותף עם עבודות אחרות</button></div>
+    ${basketLoad().length?`<div class="meta" style="margin-top:6px">בחיתוך המשותף: ${basketLoad().length} עבודות · <span style="cursor:pointer;color:var(--amber)" onclick="renderBasket()">פתח</span></div>`:""}
+    <div id="basketBox"></div>
   </div>`;
   out.scrollIntoView({behavior:"smooth"});
 }
@@ -1070,6 +1073,70 @@ function expandQty(arr){
   return out;
 }
 
+/* ===== חיתוך משותף: כמה עבודות מאותו חומר על אותם לוחות. הסל נשמר במכשיר ===== */
+const bEsc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const BASKET_KEY="stoneai_basket_v1";
+function basketLoad(){try{return JSON.parse(localStorage.getItem(BASKET_KEY)||"[]");}catch(e){return [];}}
+function basketSave(b){try{localStorage.setItem(BASKET_KEY,JSON.stringify(b));return true;}catch(e){return false;}}
+function basketAdd(){
+  const {K,C}=quotePieces();
+  if(!K.length&&!C.length){alert("אין עדיין חתיכות עם אורך ועומק.");return;}
+  const b=basketLoad();
+  const other=b.find(x=>x.mat!==MAT);
+  if(other){alert("בחיתוך המשותף יש עבודות מ"+MATERIALS[other.mat].he+". אפשר לחתוך יחד רק עבודות מאותו חומר ועובי.");return;}
+  let job=(SKETCH.job||"").trim();
+  if(!job){job=(prompt("שם העבודה או הלקוח, כדי לדעת איזו חתיכה של מי:")||"").trim();if(!job)return;}
+  if(b.some(x=>x.job===job)&&!confirm("כבר יש בחיתוך המשותף עבודה בשם "+job+". להוסיף אותה שוב?"))return;
+  b.push({id:Date.now(),job,mat:MAT,K,C});
+  if(!basketSave(b)){alert("לא הצלחתי לשמור במכשיר.");return;}
+  renderBasket();
+}
+function basketRemove(id){basketSave(basketLoad().filter(x=>x.id!==id));renderBasket();}
+function basketClear(){if(confirm("לרוקן את החיתוך המשותף?")){basketSave([]);renderBasket();}}
+function basketPayload(jobs){
+  const tag=(arr,job)=>arr.map(p=>({...p,edges:p.edges||{},job}));
+  return {pieces:jobs.flatMap(x=>tag(x.K,x.job)),cladding:jobs.flatMap(x=>tag(x.C,x.job)),material:jobs[0].mat,
+    job_name:jobs.length>1?"חיתוך משותף · "+jobs.length+" עבודות":jobs[0].job};
+}
+function renderBasket(){
+  const box=document.getElementById("basketBox");if(!box)return;
+  const b=basketLoad();
+  if(!b.length){box.innerHTML='<div class="combo"><h3>חיתוך משותף</h3><div class="meta">אין עבודות. מוסיפים עבודה מטבלת המידות שלה.</div></div>';return;}
+  const n=x=>x.K.length+x.C.length;
+  box.innerHTML=`<div class="combo"><h3>חיתוך משותף · ${MATERIALS[b[0].mat].he}</h3>
+    <div class="meta">כל החתיכות של העבודות האלה יסודרו יחד על אותם לוחות. בתוכנית ליד כל חתיכה כתוב לאיזו עבודה היא שייכת.</div>
+    ${b.map(x=>`<div style="display:flex;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px">
+      <span style="flex:1">${bEsc(x.job)} · ${n(x)} חתיכות</span>
+      <span style="cursor:pointer;color:#b42318;font-size:13px" onclick="basketRemove(${x.id})">הסרה</span></div>`).join("")}
+    <div class="row" style="margin-top:12px">
+      <button class="btn" style="flex:2" onclick="basketRun()" ${b.length<2?"disabled":""}>צור תוכנית משותפת ו־DXF</button>
+      <button class="btn ghost" style="flex:1" onclick="basketClear()">ריקון</button></div>
+    ${b.length<2?'<div class="meta" style="margin-top:6px">צריך לפחות שתי עבודות. אפשר לפתוח עבודה נוספת ולהוסיף גם אותה.</div>':""}
+    <div id="basketOut"></div></div>`;
+  box.scrollIntoView({behavior:"smooth"});
+}
+async function basketRun(){
+  const b=basketLoad(),o=document.getElementById("basketOut");if(b.length<2||!o)return;
+  o.innerHTML='<div class="meta" style="margin-top:10px">מסדר את כל העבודות יחד ומשווה לחיתוך של כל עבודה לבד…</div>';
+  const call=pl=>fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(pl)}).then(r=>r.json());
+  try{
+    const res=await Promise.all([call(basketPayload(b)),...b.map(x=>call(basketPayload([x])))]);
+    const bad=res.find(r=>!r.ok);if(bad)throw new Error(bad.error||"שגיאת מנוע");
+    const j=res[0],apart=res.slice(1).reduce((s,r)=>s+r.slabs,0),saved=apart-j.slabs;
+    const sl=n=>n===1?"לוח אחד":n+" לוחות";
+    LAST_REMNANTS=j.remnants||[];LAST_FILES={pdf:j.pdf,dxf:j.dxf};
+    o.innerHTML=`<div class="info" style="margin-top:12px"><b>${j.pieces} חתיכות על ${sl(j.slabs)}</b><br>
+      ${saved>0?`כל עבודה לבד הייתה צריכה ביחד ${sl(apart)}. החיתוך המשותף חוסך ${sl(saved)}.`
+        :`כל עבודה לבד הייתה צריכה ביחד ${sl(apart)}, כך שהחיתוך המשותף לא חוסך לוח שלם הפעם.`}
+      ${checkHtml(j.check)}
+      <div class="row" style="margin-top:10px">
+        <button class="btn" style="flex:2" onclick="dlB64('shared_plan.pdf',LAST_FILES.pdf,'application/pdf')">הורד תוכנית חיתוך (PDF) ↓</button>
+        <button class="btn ghost" style="flex:1" id="bdxf">הורד DXF ↓</button></div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button></div>
+      <div id="invBox"></div></div>`;
+    document.getElementById("bdxf").onclick=()=>{if(dxfGuard(j.check))download("shared_"+b[0].mat+".dxf",j.dxf);};
+  }catch(e){o.innerHTML='<div class="man" style="margin-top:10px">'+e.message+'</div>';}
+}
 async function generateFromSketch(){
   const cbx=sketchCombos();
   const C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
