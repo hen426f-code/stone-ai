@@ -943,8 +943,122 @@ function renderSketchTable(){
     ${C.map((p,i)=>skRow(C,i,"cladding")).join("")}
     <span onclick="SKETCH.cladding.push({label:'ציפוי קיר',len:null,depth:null,openings:[]});renderSketchTable()" style="cursor:pointer;color:var(--amber);font-size:13px">+ הוסף ציפוי</span>
     <div class="row" style="margin-top:18px"><button class="btn" style="flex:1" onclick="generateFromSketch()">צור תוכנית חיתוך + DXF ↓</button></div>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderQuote()">💰 הצעת מחיר ללקוח</button></div>
+    <div id="quoteBox"></div>
   </div>`;
   out.scrollIntoView({behavior:"smooth"});
+}
+
+/* ===== הצעת מחיר ללקוח מתוך הסקיצה. המחירון נשמר בדפדפן, ושום מחיר לא מנוחש ===== */
+const PRICE_KEY="stoneai_prices_v1";
+const PRICE_FIELDS=[
+  ["m2_"+"porcelan","משטח פורצלן, למ״ר"],["m2_"+"dekton","משטח דקטון, למ״ר"],["m2_"+"synthetic","משטח סינטטי, למ״ר"],
+  ["clad_m2","ציפוי קיר, למ״ר"],["fe_m","עיבוד חזית, למטר אורך"],["mitre_m","גרונג, למטר אורך"],
+  ["sink","פתח כיור, ליחידה"],["cook","פתח כיריים, ליחידה"],["socket","פתח חשמל, ליחידה"],["other","פתח אחר, ליחידה"],
+  ["install","התקנה, סכום קבוע"],["transport","הובלה, סכום קבוע"]];
+let QUOTE={customer:"",note:""};
+function priceLoad(){try{return JSON.parse(localStorage.getItem(PRICE_KEY)||"{}");}catch(e){return {};}}
+function priceSave(p){try{localStorage.setItem(PRICE_KEY,JSON.stringify(p));}catch(e){}}
+function opKind(k){k=k||"";if(/כיור|sink/i.test(k))return "sink";if(/כיר|גז|gas|cook/i.test(k))return "cook";if(/חשמל|שקע|socket/i.test(k))return "socket";return "other";}
+function quotePieces(){
+  const cb=sketchCombos();
+  let K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
+  if(cb&&SKETCH.combo>=0&&cb[SKETCH.combo])K=cb[SKETCH.combo].pieces;
+  return {K:expandQty(K),C:expandQty(SKETCH.cladding.filter(p=>p.len>0&&p.depth>0))};
+}
+function quoteItems(){
+  const P=priceLoad(),{K,C}=quotePieces(),mat=MATERIALS[MAT];
+  const m2=a=>a.reduce((s,p)=>s+p.len*p.depth,0)/1e4;
+  const edgeLen=(p,t)=>Object.entries(p.edges||{}).filter(([,v])=>v===t).reduce((s,[k])=>s+((k==="front"||k==="back")?p.len:p.depth),0);
+  const all=K.concat(C);
+  const fe=all.reduce((s,p)=>s+(p.fe_cm>0?p.fe_cm:edgeLen(p,"fe")),0)/100;
+  const mitre=all.reduce((s,p)=>s+edgeLen(p,"mitre"),0)/100;
+  const ops={sink:0,cook:0,socket:0,other:0};
+  all.forEach(p=>(p.openings||[]).forEach(o=>ops[opKind(o.kind)]++));
+  const r2=v=>Math.round(v*100)/100;
+  const L=[];
+  const add=(key,label,qty,unit)=>{if(qty>0)L.push({key,label,qty:r2(qty),unit,price:P[key]});};
+  add("m2_"+MAT,"משטח "+mat.he,m2(K),"מ״ר");
+  add("clad_m2","ציפוי קיר "+mat.he,m2(C),"מ״ר");
+  add("fe_m","עיבוד חזית",fe,"מטר");
+  add("mitre_m","גרונג",mitre,"מטר");
+  add("sink","פתח כיור",ops.sink,"יח׳");add("cook","פתח כיריים",ops.cook,"יח׳");
+  add("socket","פתח חשמל",ops.socket,"יח׳");add("other","פתח נוסף",ops.other,"יח׳");
+  if(P.install>0)L.push({key:"install",label:"התקנה",qty:1,unit:"",price:P.install});
+  if(P.transport>0)L.push({key:"transport",label:"הובלה",qty:1,unit:"",price:P.transport});
+  L.forEach(l=>{l.total=(l.price>0)?Math.round(l.qty*l.price):null;});
+  const missing=L.filter(l=>l.total===null).map(l=>l.label);
+  const sub=L.reduce((s,l)=>s+(l.total||0),0), vatPct=(P.vat>=0&&P.vat!=="")?+P.vat:18;
+  const vat=Math.round(sub*vatPct/100);
+  return {lines:L,missing,sub,vat,vatPct,total:sub+vat,P};
+}
+const ils=v=>"₪"+Math.round(v).toLocaleString("he-IL");
+function renderQuote(){
+  const box=document.getElementById("quoteBox"); if(!box)return;
+  const q=quoteItems(),P=q.P;
+  const fld=(k,l,w)=>`<label style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:6px"><span style="flex:1">${l}</span>
+    <input type="number" min="0" step="1" value="${P[k]??""}" style="width:${w||100}px" onchange="const p=priceLoad();p['${k}']=this.value===''?'':+this.value;priceSave(p);renderQuote()"></label>`;
+  box.innerHTML=`<div class="combo"><h3>הצעת מחיר ללקוח</h3>
+    <div class="meta">הכמויות מחושבות מהסקיצה ומהחלוקה שנבחרה. המחירון נשמר במכשיר הזה ומשמש לכל ההצעות הבאות.</div>
+    <div class="row" style="margin-top:10px">
+      <input placeholder="שם הלקוח" value="${QUOTE.customer}" oninput="QUOTE.customer=this.value" style="flex:1">
+    </div>
+    <div style="margin-top:12px;border:1px solid var(--line);border-radius:12px;overflow:hidden">
+      ${q.lines.length?q.lines.map(l=>`<div style="display:flex;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px">
+        <span style="flex:1">${l.label}${l.unit?` · ${l.qty} ${l.unit}`:""}</span>
+        <span style="${l.total===null?"color:#b42318":""}">${l.total===null?"חסר מחיר":ils(l.total)}</span></div>`).join(""):'<div class="meta" style="padding:10px">אין עדיין חתיכות עם מידות.</div>'}
+      <div style="display:flex;padding:9px 12px;font-size:14px"><span style="flex:1">לפני מע״מ</span><span>${ils(q.sub)}</span></div>
+      <div style="display:flex;padding:0 12px 9px;font-size:14px"><span style="flex:1">מע״מ ${q.vatPct}%</span><span>${ils(q.vat)}</span></div>
+      <div style="display:flex;padding:10px 12px;font-size:16px;font-weight:800;background:var(--panel2)"><span style="flex:1">סה״כ לתשלום</span><span>${ils(q.total)}</span></div>
+    </div>
+    ${q.missing.length?`<div class="chk bad">חסרים מחירים במחירון עבור: ${q.missing.join(", ")}. ההצעה לא תצא עד שיוגדרו.</div>`:""}
+    <details style="margin-top:12px" ${q.missing.length?"open":""}><summary style="cursor:pointer;font-weight:700">מחירון המפעל</summary>
+      ${PRICE_FIELDS.map(([k,l])=>fld(k,l)).join("")}
+      ${fld("vat","מע״מ באחוזים",70)}
+      <div class="row" style="margin-top:8px">
+        <input placeholder="שם המפעל" value="${P.biz||""}" onchange="const p=priceLoad();p.biz=this.value;priceSave(p)" style="flex:1">
+        <input placeholder="טלפון" value="${P.phone||""}" onchange="const p=priceLoad();p.phone=this.value;priceSave(p)" style="flex:1">
+      </div>
+      <input placeholder="הערה קבועה בתחתית ההצעה, למשל תוקף ההצעה ותנאי תשלום" value="${P.terms||""}" onchange="const p=priceLoad();p.terms=this.value;priceSave(p)" style="margin-top:8px">
+    </details>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" style="flex:1" onclick="printQuote()">הצעה להדפסה או לשמירה כקובץ</button>
+      <button class="btn ghost" style="flex:1" onclick="whatsappQuote()">שלח בוואטסאפ</button>
+    </div></div>`;
+  box.scrollIntoView({behavior:"smooth"});
+}
+function quoteReady(q){if(!q.lines.length){alert("אין חתיכות עם מידות להצעה.");return false;}
+  if(q.missing.length){alert("חסרים מחירים במחירון עבור: "+q.missing.join(", "));return false;}return true;}
+function quoteText(q){
+  const P=q.P,d=new Date().toLocaleDateString("he-IL");
+  return [(P.biz||"הצעת מחיר")+(P.phone?" · "+P.phone:""),"הצעת מחיר"+(QUOTE.customer?" עבור "+QUOTE.customer:"")+" · "+d,(SKETCH.job||""),"",
+    ...q.lines.map(l=>"• "+l.label+(l.unit?" ("+l.qty+" "+l.unit+")":"")+": "+ils(l.total)),"",
+    "לפני מע״מ: "+ils(q.sub),"מע״מ "+q.vatPct+"%: "+ils(q.vat),"סה״כ לתשלום: "+ils(q.total),P.terms?"\n"+P.terms:""].filter((x,i)=>x!==""||i>2).join("\n");
+}
+function whatsappQuote(){const q=quoteItems();if(!quoteReady(q))return;window.open("https://wa.me/?text="+encodeURIComponent(quoteText(q)),"_blank");}
+function printQuote(){
+  const q=quoteItems();if(!quoteReady(q))return;
+  const P=q.P,esc=s=>String(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  const w=window.open("","_blank");if(!w){alert("הדפדפן חסם חלון חדש. אפשר לאשר חלונות קופצים לאתר ולנסות שוב.");return;}
+  w.document.write(`<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>הצעת מחיר</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:32px auto;padding:0 20px;color:#111}
+  h1{margin:0;font-size:26px}.mut{color:#666;font-size:14px}table{width:100%;border-collapse:collapse;margin-top:24px}
+  td,th{padding:10px;border-bottom:1px solid #ddd;text-align:right}th{background:#f3f4f6}.num{text-align:left;white-space:nowrap}
+  .tot td{font-weight:800;font-size:18px;border-top:2px solid #111}@media print{button{display:none}}</style></head><body>
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #111;padding-bottom:12px">
+    <div><h1>${esc(P.biz||"הצעת מחיר")}</h1><div class="mut">${esc(P.phone)}</div></div>
+    <div class="mut">${new Date().toLocaleDateString("he-IL")}</div></div>
+  <h2 style="font-size:20px;margin-top:20px">הצעת מחיר${QUOTE.customer?" עבור "+esc(QUOTE.customer):""}</h2>
+  <div class="mut">${esc(SKETCH.job)} · ${esc(MATERIALS[MAT].he)}</div>
+  <table><tr><th>פריט</th><th>כמות</th><th class="num">מחיר ליחידה</th><th class="num">סה״כ</th></tr>
+  ${q.lines.map(l=>`<tr><td>${esc(l.label)}</td><td>${l.unit?l.qty+" "+l.unit:""}</td><td class="num">${ils(l.price)}</td><td class="num">${ils(l.total)}</td></tr>`).join("")}
+  <tr><td colspan="3">לפני מע״מ</td><td class="num">${ils(q.sub)}</td></tr>
+  <tr><td colspan="3">מע״מ ${q.vatPct}%</td><td class="num">${ils(q.vat)}</td></tr>
+  <tr class="tot"><td colspan="3">סה״כ לתשלום</td><td class="num">${ils(q.total)}</td></tr></table>
+  ${P.terms?`<p class="mut" style="margin-top:24px">${esc(P.terms)}</p>`:""}
+  <button onclick="print()" style="margin-top:24px;padding:12px 20px;font-size:16px">הדפסה או שמירה כקובץ</button>
+  </body></html>`);
+  w.document.close();
 }
 
 function expandQty(arr){
