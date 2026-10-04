@@ -83,6 +83,7 @@ input,select,textarea{background:#fff!important;border:1.5px solid var(--line)!i
       <div class="opt" onclick="go('pdf')"><div class="ic">📄</div><b>קובץ PDF עם מידות</b><span>מסמך מודד — נשלח ל-AI לקריאה</span></div>
       <div class="opt" onclick="go('manual')"><div class="ic">✏️</div><b>הזנה ידנית</b><span>ישר · L · U — עם פתחים ועיבוד</span></div>
     </div>
+    <div style="margin-top:12px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderProdReport()">📊 דוח ייצור: מה נחתך החודש</span></div>
   </div>
 </div>
 
@@ -198,7 +199,7 @@ async function engineResult(container,payload,isProdim,file){
       <div id="invBox"></div><div id="shareBox"></div></div>`;
     LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("epdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
-    document.getElementById("edxf").onclick=()=>{if(dxfGuard(j.check))download("cut_"+MAT+".dxf",j.dxf);};
+    document.getElementById("edxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,isProdim&&file?file.name.replace(/\.dxf$/i,""):((payload&&payload.job_name)||""),j.dxf);}};
     container.scrollIntoView({behavior:"smooth"});
   }catch(e){container.innerHTML=`<div class="combo"><h3>שגיאה ביצירת התוכנית</h3><div class="man">${e.message}. נסה שוב בעוד רגע.</div></div>`;}
 }
@@ -727,6 +728,49 @@ function invExport(){
 }
 
 
+/* ===== דוח ייצור: כל קובץ שירד למכונה נרשם ביומן במכשיר ===== */
+const PROD_KEY="stoneai_prodlog_v1";
+function prodLoad(){try{return JSON.parse(localStorage.getItem(PROD_KEY)||"[]");}catch(e){return [];}}
+function prodLog(ch,job,dxf){
+  const u=(ch&&ch.usage)||{};if(!u.slabs)return;
+  const d=new Date(),day=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  const sig=(job||"")+"|"+MAT+"|"+(dxf?dxf.length:0)+"|"+day;
+  const rows=prodLoad();if(rows.some(r=>r.sig===sig))return;   // אותו קובץ שירד פעמיים באותו יום נרשם פעם אחת
+  rows.push({sig,date:day,time:d.toTimeString().slice(0,5),job:job||"",mat:MAT,slabs:u.slabs,pieces_m2:u.pieces_m2,slabs_m2:u.slabs_m2,
+    cut_m:u.cut_m??null,mitre_m:u.mitre_m??null});
+  try{localStorage.setItem(PROD_KEY,JSON.stringify(rows));}catch(e){}
+}
+function prodMonths(rows){return [...new Set(rows.map(r=>r.date.slice(0,7)))].sort().reverse();}
+function renderProdReport(month){
+  const out=document.getElementById("out"),all=prodLoad(),months=prodMonths(all);
+  month=month||months[0];
+  const rows=all.filter(r=>r.date.slice(0,7)===month);
+  const sum=k=>Math.round(rows.reduce((s,r)=>s+(+r[k]||0),0)*100)/100;
+  const noLen=rows.filter(r=>r.cut_m==null).length;
+  const pm2=sum("pieces_m2"),sm2=sum("slabs_m2");
+  out.innerHTML=`<div class="combo"><h3>דוח ייצור</h3>
+    <div class="meta">כל קובץ מכונה שירד מהמכשיר הזה נרשם כאן אוטומטית. הנתונים נשמרים במכשיר בלבד.</div>
+    ${!all.length?'<div class="note" style="margin-top:12px">עדיין לא ירד אף קובץ מכונה מהמכשיר הזה.</div>':`
+    <div class="row" style="margin-top:10px"><select onchange="renderProdReport(this.value)" style="flex:1">${months.map(m=>`<option value="${m}" ${m===month?"selected":""}>${m.slice(5)}/${m.slice(0,4)}</option>`).join("")}</select></div>
+    <div style="margin-top:12px;border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:14px">
+      ${[["עבודות",rows.length],["לוחות",sum("slabs")],["מ״ר חתיכות",pm2],["אחוז ניצול",sm2?Math.round(1000*pm2/sm2)/10+"%":"אין"],
+         ["מטר חיתוך",sum("cut_m")+(noLen?" (בלי "+noLen+" עבודות ישנות)":"")],["מטר גרונג",sum("mitre_m")]]
+        .map(([a,b])=>`<div style="display:flex;padding:9px 12px;border-bottom:1px solid var(--line)"><span style="flex:1">${a}</span><b>${b}</b></div>`).join("")}
+    </div>
+    <div style="margin-top:12px;font-weight:700">העבודות בחודש</div>
+    ${rows.slice().reverse().map(r=>`<div class="meta" style="padding:6px 0;border-bottom:1px solid var(--line)">${r.date.slice(8)}/${r.date.slice(5,7)} · ${String(r.job||"בלי שם").replace(/[&<>]/g,"")} · ${MATERIALS[r.mat]?MATERIALS[r.mat].he:r.mat} · ${r.slabs===1?"לוח אחד":r.slabs+" לוחות"}${r.cut_m!=null?" · "+r.cut_m+" מטר חיתוך":""}</div>`).join("")}
+    <div class="row" style="margin-top:12px"><button class="btn ghost" style="flex:1" onclick="prodExport()">📊 ייצוא כל היומן לאקסל</button></div>`}
+    <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="document.getElementById('out').innerHTML=''">סגירה</button></div></div>`;
+  out.scrollIntoView({behavior:"smooth"});
+}
+function prodExport(){
+  const rows=prodLoad();if(!rows.length)return;
+  const head=["תאריך","שעה","עבודה","חומר","לוחות","מ״ר חתיכות","מ״ר לוחות","מטר חיתוך","מטר גרונג"];
+  const esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+  const csv=[head.map(esc).join(",")].concat(rows.map(r=>[r.date,r.time,r.job,MATERIALS[r.mat]?MATERIALS[r.mat].he:r.mat,r.slabs,r.pieces_m2,r.slabs_m2,r.cut_m,r.mitre_m].map(esc).join(","))).join("\r\n");
+  saveFile("production_log.csv",new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
+}
+
 /* ===== חתיכה ארוכה מהלוח → אפשרויות חלוקה ===== */
 function splitCombos(){
   const mat=MATERIALS[MAT], maxL=mat.slabL-1;
@@ -1197,7 +1241,7 @@ function pickCombo(i){
   const box=document.getElementById("invBox");
   if(!dxfGuard(x.check)){box.innerHTML=checkHtml(x.check);return;}
   LAST_REMNANTS=x.remnants||[]; LAST_FILES.dxf=x.dxf;
-  download("cut_"+MAT+".dxf",x.dxf);
+  download("cut_"+MAT+".dxf",x.dxf);prodLog(x.check,SKETCH.job||"",x.dxf);
   box.innerHTML=`<div class="info" style="margin-top:12px">נבחרה קומבינציה ${i+1} · ${x.title}. הקובץ ירד.${checkHtml(x.check)}
     <div class="row" style="margin-top:10px">
       <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות</button>
@@ -1233,7 +1277,7 @@ async function generateSimple(){
       <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>`;
     LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("spdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
-    document.getElementById("sdxf").onclick=()=>{if(dxfGuard(j.check))download("cut_"+MAT+".dxf",j.dxf);};
+    document.getElementById("sdxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,SKETCH.job||"",j.dxf);}};
   }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
 }
 </script></body></html>
