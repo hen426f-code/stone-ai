@@ -731,12 +731,13 @@ function invExport(){
 /* ===== דוח ייצור: כל קובץ שירד למכונה נרשם ביומן במכשיר ===== */
 const PROD_KEY="stoneai_prodlog_v1";
 function prodLoad(){try{return JSON.parse(localStorage.getItem(PROD_KEY)||"[]");}catch(e){return [];}}
-function prodLog(ch,job,dxf){
+function prodLog(ch,job,dxf,mat){
+  mat=mat||MAT;
   const u=(ch&&ch.usage)||{};if(!u.slabs)return;
   const d=new Date(),day=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-  const sig=(job||"")+"|"+MAT+"|"+(dxf?dxf.length:0)+"|"+day;
+  const sig=(job||"")+"|"+mat+"|"+(dxf?dxf.length:0)+"|"+day;
   const rows=prodLoad();if(rows.some(r=>r.sig===sig))return;   // אותו קובץ שירד פעמיים באותו יום נרשם פעם אחת
-  rows.push({sig,date:day,time:d.toTimeString().slice(0,5),job:job||"",mat:MAT,slabs:u.slabs,pieces_m2:u.pieces_m2,slabs_m2:u.slabs_m2,
+  rows.push({sig,date:day,time:d.toTimeString().slice(0,5),job:job||"",mat,slabs:u.slabs,pieces_m2:u.pieces_m2,slabs_m2:u.slabs_m2,
     cut_m:u.cut_m??null,mitre_m:u.mitre_m??null});
   try{localStorage.setItem(PROD_KEY,JSON.stringify(rows));}catch(e){}
 }
@@ -1201,7 +1202,7 @@ async function basketRun(){
         <button class="btn ghost" style="flex:1" id="bdxf">הורד DXF ↓</button></div>
       <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button></div>
       <div id="invBox"></div></div>`;
-    document.getElementById("bdxf").onclick=()=>{if(dxfGuard(j.check))download("shared_"+b[0].mat+".dxf",j.dxf);};
+    document.getElementById("bdxf").onclick=()=>{if(dxfGuard(j.check)){download("shared_"+b[0].mat+".dxf",j.dxf);prodLog(j.check,"חיתוך משותף: "+b.map(x=>x.job).join(", "),j.dxf,b[0].mat);}};
   }catch(e){o.innerHTML='<div class="man" style="margin-top:10px">'+e.message+'</div>';}
 }
 async function generateFromSketch(){
