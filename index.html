@@ -959,6 +959,22 @@ const PRICE_FIELDS=[
 let QUOTE={customer:"",note:""};
 function priceLoad(){try{return JSON.parse(localStorage.getItem(PRICE_KEY)||"{}");}catch(e){return {};}}
 function priceSave(p){try{localStorage.setItem(PRICE_KEY,JSON.stringify(p));}catch(e){}}
+/* לוגו המפעל להצעה: מוקטן לרוחב 400 פיקסלים ונשמר במכשיר בנפרד מהמחירון */
+const LOGO_KEY="stoneai_logo_v1";
+function logoGet(){try{return localStorage.getItem(LOGO_KEY)||"";}catch(e){return "";}}
+function logoClear(){try{localStorage.removeItem(LOGO_KEY);}catch(e){}renderQuote();}
+function logoPick(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{const im=new Image();im.onload=()=>{
+    const sc=Math.min(1,400/im.width),c=document.createElement("canvas");
+    c.width=Math.round(im.width*sc);c.height=Math.round(im.height*sc);
+    const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);
+    try{localStorage.setItem(LOGO_KEY,c.toDataURL("image/jpeg",0.9));}catch(e){alert("לא הצלחתי לשמור את הלוגו במכשיר. אפשר לנסות תמונה קטנה יותר.");}
+    renderQuote();};im.onerror=()=>alert("הקובץ שנבחר אינו תמונה שאפשר לקרוא.");im.src=rd.result;};
+  rd.readAsDataURL(f);
+}
+const escA=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function opKind(k){k=k||"";if(/כיור|sink/i.test(k))return "sink";if(/כיר|גז|gas|cook/i.test(k))return "cook";if(/חשמל|שקע|socket/i.test(k))return "socket";return "other";}
 function quotePieces(){
   const cb=sketchCombos();
@@ -1001,7 +1017,7 @@ function renderQuote(){
   box.innerHTML=`<div class="combo"><h3>הצעת מחיר ללקוח</h3>
     <div class="meta">הכמויות מחושבות מהסקיצה ומהחלוקה שנבחרה. המחירון נשמר במכשיר הזה ומשמש לכל ההצעות הבאות.</div>
     <div class="row" style="margin-top:10px">
-      <input placeholder="שם הלקוח" value="${QUOTE.customer}" oninput="QUOTE.customer=this.value" style="flex:1">
+      <input placeholder="שם הלקוח" value="${escA(QUOTE.customer)}" oninput="QUOTE.customer=this.value" style="flex:1">
     </div>
     <div style="margin-top:12px;border:1px solid var(--line);border-radius:12px;overflow:hidden">
       ${q.lines.length?q.lines.map(l=>`<div style="display:flex;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px">
@@ -1016,10 +1032,16 @@ function renderQuote(){
       ${PRICE_FIELDS.map(([k,l])=>fld(k,l)).join("")}
       ${fld("vat","מע״מ באחוזים",70)}
       <div class="row" style="margin-top:8px">
-        <input placeholder="שם המפעל" value="${P.biz||""}" onchange="const p=priceLoad();p.biz=this.value;priceSave(p)" style="flex:1">
-        <input placeholder="טלפון" value="${P.phone||""}" onchange="const p=priceLoad();p.phone=this.value;priceSave(p)" style="flex:1">
+        <input placeholder="שם המפעל" value="${escA(P.biz)}" onchange="const p=priceLoad();p.biz=this.value;priceSave(p)" style="flex:1">
+        <input placeholder="טלפון" value="${escA(P.phone)}" onchange="const p=priceLoad();p.phone=this.value;priceSave(p)" style="flex:1">
       </div>
-      <input placeholder="הערה קבועה בתחתית ההצעה, למשל תוקף ההצעה ותנאי תשלום" value="${P.terms||""}" onchange="const p=priceLoad();p.terms=this.value;priceSave(p)" style="margin-top:8px">
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px;font-size:13px">
+        ${logoGet()?`<img src="${logoGet()}" alt="לוגו" style="max-height:44px;max-width:120px;border-radius:6px;background:#fff">
+          <label style="cursor:pointer;color:var(--amber)">החלפת לוגו<input type="file" accept="image/*" style="display:none" onchange="logoPick(this)"></label>
+          <span onclick="logoClear()" style="cursor:pointer;color:#b42318">הסרה</span>`
+        :`<label style="cursor:pointer;color:var(--amber)">+ הוספת לוגו של המפעל<input type="file" accept="image/*" style="display:none" onchange="logoPick(this)"></label>`}
+      </div>
+      <input placeholder="הערה קבועה בתחתית ההצעה, למשל תוקף ההצעה ותנאי תשלום" value="${escA(P.terms)}" onchange="const p=priceLoad();p.terms=this.value;priceSave(p)" style="margin-top:8px">
     </details>
     <div class="row" style="margin-top:12px">
       <button class="btn" style="flex:1" onclick="printQuote()">הצעה להדפסה או לשמירה כקובץ</button>
@@ -1046,7 +1068,8 @@ function printQuote(){
   td,th{padding:10px;border-bottom:1px solid #ddd;text-align:right}th{background:#f3f4f6}.num{text-align:left;white-space:nowrap}
   .tot td{font-weight:800;font-size:18px;border-top:2px solid #111}@media print{button{display:none}}</style></head><body>
   <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #111;padding-bottom:12px">
-    <div><h1>${esc(P.biz||"הצעת מחיר")}</h1><div class="mut">${esc(P.phone)}</div></div>
+    <div style="display:flex;gap:14px;align-items:center">${logoGet()?`<img src="${logoGet()}" alt="" style="max-height:70px;max-width:180px">`:""}
+      <div><h1>${esc(P.biz||"הצעת מחיר")}</h1><div class="mut">${esc(P.phone)}</div></div></div>
     <div class="mut">${new Date().toLocaleDateString("he-IL")}</div></div>
   <h2 style="font-size:20px;margin-top:20px">הצעת מחיר${QUOTE.customer?" עבור "+esc(QUOTE.customer):""}</h2>
   <div class="mut">${esc(SKETCH.job)} · ${esc(MATERIALS[MAT].he)}</div>
