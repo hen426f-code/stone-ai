@@ -88,7 +88,7 @@ input,select,textarea{background:#fff!important;border:1.5px solid var(--line)!i
 </div>
 
 <!-- MATERIAL (shared) -->
-<div id="matcard" class="card hidden"><h2>חומר</h2><div class="mats" id="mats"></div><div class="note" id="matnote">העומק ומידת הפלטה נקבעים אוטומטית לפי החומר.</div></div>
+<div id="matcard" class="card hidden"><h2>חומר</h2><div class="mats" id="mats"></div><div class="note" id="matnote">העומק נקבע לפי החומר. את מידות הלוח אפשר להתאים למה שיש אצלך במלאי.</div></div>
 
 <!-- PRODIM -->
 <div id="prodim" class="card hidden">
@@ -152,6 +152,19 @@ input,select,textarea{background:#fff!important;border:1.5px solid var(--line)!i
 
 <script>
 const MATERIALS={porcelan:{he:"פורצלן",depth:12,slabL:320,slabW:160},dekton:{he:"דקטון",depth:12,slabL:330,slabW:150},synthetic:{he:"סינטטי",depth:20,slabL:303,slabW:140}};
+/* מידות הלוח של המפעל לכל חומר: נשמרות במכשיר וגוברות על ברירת המחדל. העובי לא משתנה */
+const SLAB_KEY="stoneai_slabs_v1", SLAB_DEF=JSON.parse(JSON.stringify(MATERIALS));
+function slabLoad(){try{return JSON.parse(localStorage.getItem(SLAB_KEY)||"{}");}catch(e){return {};}}
+function slabApply(){const o=slabLoad();Object.keys(MATERIALS).forEach(k=>{const v=o[k];
+  const ok=v&&+v.W>=100&&+v.L>=+v.W&&+v.L<=400;
+  MATERIALS[k].slabL=ok?+v.L:SLAB_DEF[k].slabL;MATERIALS[k].slabW=ok?+v.W:SLAB_DEF[k].slabW;});}
+slabApply();
+function slabSet(k,L,W){const o=slabLoad();
+  if(L===null){delete o[k];}
+  else{L=+L;W=+W;if(!(W>=100&&L>=W&&L<=400)){alert("מידות הלוח צריכות להיות בין 100 ל־400 ס״מ, והרוחב לא גדול מהאורך.");renderMats();return;}o[k]={L,W};}
+  try{localStorage.setItem(SLAB_KEY,JSON.stringify(o));}catch(e){}
+  slabApply();renderMats();}
+const slabQ=()=>({slabL:MATERIALS[MAT].slabL,slabW:MATERIALS[MAT].slabW});
 const KERF=0.6,PRIO_ACI=[1,2,3,4,5,6,7,8,9,9],OPENING_ACI=9;
 const ACICOL={1:"#e6194b",2:"#f58231",3:"#3cb44b",4:"#42d4f4",5:"#4363d8",6:"#a24bd6",7:"#9a9a3a",8:"#00a0a0",9:"#e6194b"};
 let MAT="porcelan", MODE=null, PRODIM_PIECES=null;
@@ -177,7 +190,7 @@ async function engineResult(container,payload,isProdim,file){
   container.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">מפיק PDF מקצועי + DXF למכונה. בפעם הראשונה זה עלול לקחת עד דקה (השרת מתעורר).</div></div>';
   try{
     let res;
-    if(isProdim){const fd=new FormData();fd.append("file",file);fd.append("material",MAT);res=await fetch(ENGINE+"/api/prodim",{method:"POST",body:fd});}
+    if(isProdim){const fd=new FormData();fd.append("file",file);fd.append("material",MAT);fd.append("slabL",slabQ().slabL);fd.append("slabW",slabQ().slabW);res=await fetch(ENGINE+"/api/prodim",{method:"POST",body:fd});}
     else{res=await fetch(ENGINE+"/api/plan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
     const j=await res.json();
     if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
@@ -455,7 +468,7 @@ function runManual(){
   if(!long||!arm||!depth){alert("נא למלא אורך, זרוע ועומק");return;}
   const conv=(pos,side)=>pos==null?null:(side==="right"?long-pos:pos);
   const mk=(pfx)=>{const p=num(pfx+"Pos");if(p==null)return null;return {"in":"long","from_left":conv(p,document.getElementById(pfx+"Side").value),"w":num(pfx+"W"),"h":num(pfx+"H")};};
-  const payload={long,arm,depth,arm_side:document.getElementById("side").value,sink:mk("sink"),gas:mk("gas"),material:MAT};
+  const payload={long,arm,depth,arm_side:document.getElementById("side").value,sink:mk("sink"),gas:mk("gas"),material:MAT,...slabQ()};
   const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
   engineResult(c,payload,false,null);
 }
@@ -549,7 +562,7 @@ async function shareJob(){
 function readProdim(){
   const f=document.getElementById("prodimFile").files[0];if(!f)return;
   document.getElementById("prodimInfo").innerHTML=`<div class="info">קורא את קובץ המודד…</div>`;
-  const fd=new FormData();fd.append("file",f);fd.append("material",MAT);
+  const fd=new FormData();fd.append("file",f);fd.append("material",MAT);fd.append("slabL",slabQ().slabL);fd.append("slabW",slabQ().slabW);
   fetch(ENGINE+"/api/prodim",{method:"POST",body:fd}).then(r=>r.json()).then(j=>{
     if(!j.ok)throw new Error((j.error||"שגיאה")+((j.warnings&&j.warnings.length)?"<br>"+j.warnings.map(w=>"• "+w).join("<br>"):""));
     // outline = המתאר המדויק מהמודד; נשלח חזרה למנוע כדי שקובץ המכונה יחתוך את הצורה האמיתית
@@ -564,7 +577,14 @@ function readProdim(){
 function renderMats(){const m=document.getElementById("mats");m.innerHTML="";
   Object.entries(MATERIALS).forEach(([k,v])=>{const d=document.createElement("div");d.className="mat"+(k===MAT?" on":"");
     d.innerHTML=`<b>${v.he}</b><span>עובי ${v.depth} מ"מ</span><span>פלטה ${v.slabL}×${v.slabW}</span>`;
-    d.onclick=()=>{MAT=k;renderMats();};m.appendChild(d);});}
+    d.onclick=()=>{MAT=k;renderMats();};m.appendChild(d);});
+  const v=MATERIALS[MAT],cust=v.slabL!==SLAB_DEF[MAT].slabL||v.slabW!==SLAB_DEF[MAT].slabW,e=document.createElement("div");
+  e.style.cssText="grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13px;margin-top:6px";
+  e.innerHTML=`<span>מידות הלוח שלך ל${v.he}:</span>
+    <input type="number" value="${v.slabL}" style="width:70px" id="slabL"> × <input type="number" value="${v.slabW}" style="width:70px" id="slabW"> ס״מ
+    <span style="cursor:pointer;color:var(--amber)" onclick="slabSet('${MAT}',document.getElementById('slabL').value,document.getElementById('slabW').value)">שמירה</span>
+    ${cust?`<span style="cursor:pointer;color:var(--muted,#888)" onclick="slabSet('${MAT}',null)">חזרה ל־${SLAB_DEF[MAT].slabL}×${SLAB_DEF[MAT].slabW}</span>`:""}`;
+  m.appendChild(e);}
 function hideAll(){["start","matcard","prodim","upload","manual"].forEach(id=>document.getElementById(id).classList.add("hidden"));document.getElementById("out").innerHTML="";}
 function home(){hideAll();document.getElementById("start").classList.remove("hidden");}
 function go(mode){MODE=mode;hideAll();if(mode==="manual"){KSHAPE=null;setTimeout(()=>{renderShapePick();renderShapeForm();},0);}
@@ -1163,7 +1183,7 @@ function basketRemove(id){basketSave(basketLoad().filter(x=>x.id!==id));renderBa
 function basketClear(){if(confirm("לרוקן את החיתוך המשותף?")){basketSave([]);renderBasket();}}
 function basketPayload(jobs){
   const tag=(arr,job)=>arr.map(p=>({...p,edges:p.edges||{},job}));
-  return {pieces:jobs.flatMap(x=>tag(x.K,x.job)),cladding:jobs.flatMap(x=>tag(x.C,x.job)),material:jobs[0].mat,
+  return {pieces:jobs.flatMap(x=>tag(x.K,x.job)),cladding:jobs.flatMap(x=>tag(x.C,x.job)),material:jobs[0].mat,slabL:MATERIALS[jobs[0].mat].slabL,slabW:MATERIALS[jobs[0].mat].slabW,
     job_name:jobs.length>1?"חיתוך משותף · "+jobs.length+" עבודות":jobs[0].job};
 }
 function renderBasket(){
@@ -1213,7 +1233,7 @@ async function generateFromSketch(){
     c.innerHTML='<div class="combo"><h3>מחשב את כל הקומבינציות…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
     try{
       const res=await fetch(ENGINE+"/api/combos",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({combos:cbx.map(x=>({title:x.title,note:x.note,pieces:expandQty(x.pieces).map(p=>({...p,edges:p.edges||{}}))})),cladding:expandQty(C),material:MAT,job_name:SKETCH.job||""})});
+        body:JSON.stringify({combos:cbx.map(x=>({title:x.title,note:x.note,pieces:expandQty(x.pieces).map(p=>({...p,edges:p.edges||{}}))})),cladding:expandQty(C),material:MAT,...slabQ(),job_name:SKETCH.job||""})});
       const j=await res.json();
       if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
       LAST_FILES={pdf:j.pdf,dxf:null};
@@ -1259,7 +1279,7 @@ async function generateSimple(){
   c.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
   try{
     const res=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({pieces:expandQty(K).map(p=>({...p,edges:p.edges||{}})),cladding:expandQty(C).map(p=>({...p,edges:p.edges||{}})),material:MAT,job_name:SKETCH.job||""})});
+      body:JSON.stringify({pieces:expandQty(K).map(p=>({...p,edges:p.edges||{}})),cladding:expandQty(C).map(p=>({...p,edges:p.edges||{}})),material:MAT,...slabQ(),job_name:SKETCH.job||""})});
     const j=await res.json();
     if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
     const mat=MATERIALS[MAT];
