@@ -123,13 +123,14 @@ input,select,textarea{background:#fff!important;border:1.5px solid var(--line)!i
 <!-- CHAT -->
 <button id="chatFab" onclick="toggleChat()" title="צ'אט AI"><span class="fabdot"></span>צ'אט AI</button>
 <div id="chatPanel" class="chat-hidden">
-  <div class="chat-head"><span>🤖 עוזר AI למכונה</span><span class="chat-x" onclick="toggleChat()">✕</span></div>
+  <div class="chat-head"><span>🤖 עוזר AI למכונה</span><span><span id="chatSpk" class="chat-x" title="הקראת תשובות בקול" onclick="voiceToggleSpeak()" style="margin-inline-end:14px">🔇</span><span class="chat-x" onclick="toggleChat()">✕</span></span></div>
   <div id="chatBody"></div>
   <div id="chatAttach" style="display:none;padding:6px 12px;font-size:12px;color:var(--amber)">📎 תמונה מצורפת · <span onclick="clearChatImg()" style="cursor:pointer;text-decoration:underline">הסר</span></div>
   <div class="chat-input">
     <label for="chatImg" id="chatClip" title="צרף תמונה">📷</label>
     <input type="file" id="chatImg" accept="image/*" style="display:none" onchange="attachChatImg()">
     <textarea id="chatText" rows="1" placeholder="שאל, או צלם תקלה/סקיצה ושאל מה לעשות…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
+    <button onclick="voiceListen()" id="chatMic" title="שאל בקול" style="display:none;background:var(--rail)">🎤</button>
     <button onclick="sendChat()" id="chatSend">➤</button>
   </div>
 </div>
@@ -636,14 +637,14 @@ async function attachChatImg(){
   chatImg={media_type:"image/jpeg",data:cv.toDataURL("image/jpeg",0.82).split(",")[1]};
   document.getElementById("chatAttach").style.display="block";
 }
-async function sendChat(){
+async function sendChat(byVoice){
   const t=document.getElementById("chatText"),q=t.value.trim();
   if(!q&&!chatImg)return;
   const hasImg=!!chatImg;
   addMsg("user",(hasImg?"📷 ":"")+(q||"מה עושים?"));
   let content;
   if(hasImg){content=[{type:"image",source:{type:"base64",media_type:chatImg.media_type,data:chatImg.data}},{type:"text",text:q||"זו תמונה ממכונת החיתוך (אולי תקלה/שגיאה/התראה על המסך, או סקיצה). זהה מה רואים והסבר מה לעשות לפי מדריך המכונה: הסיבה, התיקון עכשיו, והמניעה."}];}
-  else content=q;
+  else content=byVoice?q+VOICE_HINT:q;
   chatHistory.push({role:"user",content});
   t.value="";clearChatImg();
   const thinking=addMsg("assistant","…");
@@ -654,11 +655,50 @@ async function sendChat(){
     if(!res.ok||data.error)throw new Error(data.message||data.error||("שגיאה "+res.status));
     const txt=(data.text||"").trim()||"(אין תשובה)";
     thinking.textContent=txt;chatHistory.push({role:"assistant",content:txt});
+    if(byVoice||voiceSpeakOn())voiceSay(txt);
   }catch(e){
     thinking.className="msg sys";
     thinking.textContent="שגיאה בחיבור לצ'אט: "+e.message;
   }
 }
+/* ===== עוזר קולי ליד המכונה: שואלים בקול, שומעים תשובה בעברית ===== */
+const VOICE_KEY="stoneai_voice_v1";
+const VOICE_HINT="\n\n(השאלה נשאלה בקול ליד המכונה והתשובה תוקרא בקול: ענה קצר וברור, עד חמישה משפטים, בלי טבלאות ובלי סימונים.)";
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let voiceRec=null;
+function voiceSpeakOn(){ try{return localStorage.getItem(VOICE_KEY)==="1";}catch(e){return false;} }
+function voiceSpkIcon(){ const el=document.getElementById("chatSpk"); if(el)el.textContent=voiceSpeakOn()?"🔊":"🔇"; }
+function voiceToggleSpeak(){
+  if(!("speechSynthesis" in window)){alert("הדפדפן הזה לא תומך בהקראה בקול");return;}
+  const on=!voiceSpeakOn(); try{localStorage.setItem(VOICE_KEY,on?"1":"0");}catch(e){}
+  if(!on)speechSynthesis.cancel(); voiceSpkIcon();
+}
+function voiceClean(t){ return t.replace(/[*#_`>|]/g," ").replace(/\s+/g," ").trim(); }
+function voiceSay(t){
+  if(!("speechSynthesis" in window))return;
+  try{
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(voiceClean(t)); u.lang="he-IL";
+  const v=speechSynthesis.getVoices().find(x=>/^he|^iw/i.test(x.lang)); if(v)u.voice=v;
+  speechSynthesis.speak(u);
+  }catch(e){}
+}
+function voiceListen(){
+  if(!SR)return;
+  const mic=document.getElementById("chatMic");
+  if(voiceRec){voiceRec.stop();return;}
+  if("speechSynthesis" in window)speechSynthesis.cancel();
+  const r=new SR(); r.lang="he-IL"; r.interimResults=true; r.maxAlternatives=1;
+  const t=document.getElementById("chatText"); let fin="";
+  r.onresult=e=>{ let tmp=""; for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)fin+=x[0].transcript;else tmp+=x[0].transcript;} t.value=(fin+tmp).trim(); };
+  r.onerror=e=>{ if(e.error==="not-allowed")addMsg("sys","צריך לאשר גישה למיקרופון בדפדפן כדי לשאול בקול."); else if(e.error!=="no-speech"&&e.error!=="aborted")addMsg("sys","לא הצלחתי לשמוע: "+e.error); };
+  r.onend=()=>{ voiceRec=null; mic.style.background="var(--rail)"; mic.textContent="🎤"; if(fin.trim()){t.value=fin.trim();sendChat(true);} };
+  voiceRec=r; mic.style.background="#c0392b"; mic.textContent="⏹"; r.start();
+}
+if(SR){const m=document.getElementById("chatMic"); if(m)m.style.display="";}
+voiceSpkIcon();
+if("speechSynthesis" in window)speechSynthesis.getVoices();
+
 // קריאת מידות מתמונה/PDF דרך השרת
 async function readVision(){
   const f=document.getElementById("upFile").files[0];if(!f)return;
