@@ -172,6 +172,10 @@ let MAT="porcelan", MODE=null, PRODIM_PIECES=null;
 
 /* ---- מנוע ה-PDF/DXF (Render) ---- */
 const ENGINE="https://stone-ai-engine.onrender.com";
+/* מעיר את המנוע ברגע שהאתר נפתח, ושוב כל 10 דקות כל עוד הדף פתוח, כדי שלא נחכה כ־50 שניות בבקשה הראשונה */
+function warmEngine(){fetch(ENGINE+"/",{cache:"no-store"}).catch(()=>{});}
+warmEngine();setInterval(()=>{if(!document.hidden)warmEngine();},10*60*1000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)warmEngine();});
 function dlB64(name,b64,mime){const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);saveFile(name,new Blob([arr],{type:mime}));}
 /* בודק לפני חיתוך: בעיות ודאיות באדום, דברים לבדיקה בצהוב, וניצול הלוחות */
 function checkHtml(ch){
