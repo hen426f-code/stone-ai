@@ -124,7 +124,7 @@ input,select,textarea{background:#fff!important;border:1.5px solid var(--line)!i
 <!-- CHAT -->
 <button id="chatFab" onclick="toggleChat()" title="צ'אט AI"><span class="fabdot"></span>צ'אט AI</button>
 <div id="chatPanel" class="chat-hidden">
-  <div class="chat-head"><span>🤖 עוזר AI למכונה</span><span><span id="chatSpk" class="chat-x" title="הקראת תשובות בקול" onclick="voiceToggleSpeak()" style="margin-inline-end:14px">🔇</span><span class="chat-x" onclick="toggleChat()">✕</span></span></div>
+  <div class="chat-head"><span>🤖 עוזר AI למכונה</span><span><span id="chatLang" class="chat-x" title="שפת השיחה" onclick="chatLangNext()" style="margin-inline-end:14px;font-size:14px">עב</span><span id="chatSpk" class="chat-x" title="הקראת תשובות בקול" onclick="voiceToggleSpeak()" style="margin-inline-end:14px">🔇</span><span class="chat-x" onclick="toggleChat()">✕</span></span></div>
   <div id="chatBody"></div>
   <div id="chatAttach" style="display:none;padding:6px 12px;font-size:12px;color:var(--amber)">📎 תמונה מצורפת · <span onclick="clearChatImg()" style="cursor:pointer;text-decoration:underline">הסר</span></div>
   <div class="chat-input">
@@ -649,7 +649,7 @@ async function sendChat(byVoice){
   addMsg("user",(hasImg?"📷 ":"")+(q||"מה עושים?"));
   let content;
   if(hasImg){content=[{type:"image",source:{type:"base64",media_type:chatImg.media_type,data:chatImg.data}},{type:"text",text:q||"זו תמונה ממכונת החיתוך (אולי תקלה/שגיאה/התראה על המסך, או סקיצה). זהה מה רואים והסבר מה לעשות לפי מדריך המכונה: הסיבה, התיקון עכשיו, והמניעה."}];}
-  else content=byVoice?q+VOICE_HINT:q;
+  else content=(byVoice?q+VOICE_HINT:q)+chatLangHint();
   chatHistory.push({role:"user",content});
   t.value="";clearChatImg();
   const thinking=addMsg("assistant","…");
@@ -666,6 +666,19 @@ async function sendChat(byVoice){
     thinking.textContent="שגיאה בחיבור לצ'אט: "+e.message;
   }
 }
+/* ===== שפת השיחה: עובד שלא קורא עברית שואל ומקבל תשובה בשפה שלו, גם בקול ===== */
+const LANG_KEY="stoneai_chatlang_v1";
+const CHAT_LANGS=[{k:"he",tag:"עב",sr:"he-IL",name:"עברית"},{k:"ar",tag:"ع",sr:"ar-IL",name:"ערבית"},
+  {k:"ru",tag:"Ру",sr:"ru-RU",name:"רוסית"},{k:"en",tag:"En",sr:"en-US",name:"אנגלית"}];
+function chatLang(){ let k="he"; try{k=localStorage.getItem(LANG_KEY)||"he";}catch(e){} return CHAT_LANGS.find(x=>x.k===k)||CHAT_LANGS[0]; }
+function chatLangIcon(){ const el=document.getElementById("chatLang"); if(el)el.textContent=chatLang().tag; }
+function chatLangNext(){
+  const i=CHAT_LANGS.indexOf(chatLang()),n=CHAT_LANGS[(i+1)%CHAT_LANGS.length];
+  try{localStorage.setItem(LANG_KEY,n.k);}catch(e){}
+  chatLangIcon(); addMsg("sys","שפת השיחה: "+n.name+". השאלות בקול והתשובות יהיו בשפה הזו.");
+}
+function chatLangHint(){ const l=chatLang(); return l.k==="he"?"":"\n\n(ענה ב"+l.name+" בלבד, גם אם השאלה נכתבה בשפה אחרת. שמות כפתורים ומסכים של המכונה כתוב כפי שהם מופיעים על המסך.)"; }
+
 /* ===== עוזר קולי ליד המכונה: שואלים בקול, שומעים תשובה בעברית ===== */
 const VOICE_KEY="stoneai_voice_v1";
 const VOICE_HINT="\n\n(השאלה נשאלה בקול ליד המכונה והתשובה תוקרא בקול: ענה קצר וברור, עד חמישה משפטים, בלי טבלאות ובלי סימונים.)";
@@ -683,8 +696,8 @@ function voiceSay(t){
   if(!("speechSynthesis" in window))return;
   try{
   speechSynthesis.cancel();
-  const u=new SpeechSynthesisUtterance(voiceClean(t)); u.lang="he-IL";
-  const v=speechSynthesis.getVoices().find(x=>/^he|^iw/i.test(x.lang)); if(v)u.voice=v;
+  const L=chatLang(),u=new SpeechSynthesisUtterance(voiceClean(t)); u.lang=L.sr;
+  const v=speechSynthesis.getVoices().find(x=>L.k==="he"?/^he|^iw/i.test(x.lang):x.lang.toLowerCase().startsWith(L.k)); if(v)u.voice=v;
   speechSynthesis.speak(u);
   }catch(e){}
 }
@@ -693,7 +706,7 @@ function voiceListen(){
   const mic=document.getElementById("chatMic");
   if(voiceRec){voiceRec.stop();return;}
   if("speechSynthesis" in window)speechSynthesis.cancel();
-  const r=new SR(); r.lang="he-IL"; r.interimResults=true; r.maxAlternatives=1;
+  const r=new SR(); r.lang=chatLang().sr; r.interimResults=true; r.maxAlternatives=1;
   const t=document.getElementById("chatText"); let fin="";
   r.onresult=e=>{ let tmp=""; for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)fin+=x[0].transcript;else tmp+=x[0].transcript;} t.value=(fin+tmp).trim(); };
   r.onerror=e=>{ if(e.error==="not-allowed")addMsg("sys","צריך לאשר גישה למיקרופון בדפדפן כדי לשאול בקול."); else if(e.error!=="no-speech"&&e.error!=="aborted")addMsg("sys","לא הצלחתי לשמוע: "+e.error); };
@@ -701,6 +714,7 @@ function voiceListen(){
   voiceRec=r; mic.style.background="#c0392b"; mic.textContent="⏹"; r.start();
 }
 if(SR){const m=document.getElementById("chatMic"); if(m)m.style.display="";}
+chatLangIcon();
 voiceSpkIcon();
 if("speechSynthesis" in window)speechSynthesis.getVoices();
 
