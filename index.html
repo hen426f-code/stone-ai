@@ -85,6 +85,7 @@ input,select,textarea{background:#fff!important;border:1.5px solid var(--line)!i
     </div>
     <div style="margin-top:12px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderProdReport()">📊 דוח ייצור: מה נחתך החודש</span></div>
     <div style="margin-top:8px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderJobs()">📋 לוח עבודות: מהמדידה ועד ההתקנה</span></div>
+    <div style="margin-top:8px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderInv()">📦 מלאי שאריות ומדבקות</span></div>
   </div>
 </div>
 
@@ -767,6 +768,7 @@ function askSaveRemnants(){
     <b>שמירת שאריות למלאי</b>
     <div class="meta" style="margin:4px 0 10px">${LAST_REMNANTS.length} שאריות: ${LAST_REMNANTS.map(r=>r.len+"×"+r.depth).join(" · ")}</div>
     <input id="invMat" placeholder="שם החומר (למשל: קלקטה 12 מ״מ)" style="width:100%;margin-bottom:8px">
+    <input id="invShelf" placeholder="מדף או מקום במגרש (אופציונלי)" style="width:100%;margin-bottom:8px">
     <textarea id="invNote" rows="2" placeholder="הערות חופשיות (אופציונלי)" style="width:100%;margin-bottom:8px"></textarea>
     <div class="row"><button class="btn" style="flex:1" onclick="doSaveRemnants()">שמור למלאי</button>
     <button class="btn ghost" style="flex:1" onclick="document.getElementById('invBox').innerHTML=''">ביטול</button></div>
@@ -776,20 +778,115 @@ function doSaveRemnants(){
   const mat=(document.getElementById("invMat").value||"").trim();
   if(!mat){alert("נא להזין שם חומר");return;}
   const note=(document.getElementById("invNote").value||"").trim();
+  const shelf=(document.getElementById("invShelf").value||"").trim();
   const now=new Date(), d=now.toLocaleDateString("he-IL"), t=now.toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"});
   const job=(typeof SKETCH!=="undefined"&&SKETCH&&SKETCH.job)?SKETCH.job:"";
-  const rows=invLoad();
-  LAST_REMNANTS.forEach(r=>rows.push({date:d,time:t,material:mat,len:r.len,depth:r.depth,slab:r.slab,job:job,note:note}));
+  const rows=invRows();let no=remLastNo(rows);
+  LAST_REMNANTS.forEach((r,i)=>rows.push({id:"r"+Date.now().toString(36)+i,no:++no,date:d,time:t,material:mat,len:r.len,depth:r.depth,slab:r.slab,job:job,note:note,shelf:shelf}));
   if(!invSave(rows)){alert("לא הצלחתי לשמור");return;}
-  document.getElementById("invBox").innerHTML=`<div class="info" style="margin-top:10px">נשמרו ${LAST_REMNANTS.length} שאריות. סה״כ במלאי: ${rows.length}. <span onclick="invExport()" style="cursor:pointer;color:var(--amber);text-decoration:underline">ייצוא לאקסל</span></div>`;
+  remSetNo(no);
+  document.getElementById("invBox").innerHTML=`<div class="info" style="margin-top:10px">נשמרו ${LAST_REMNANTS.length} שאריות. סה״כ במלאי: ${rows.length}. <span onclick="renderInv()" style="cursor:pointer;color:var(--amber);text-decoration:underline">למלאי ולהדפסת מדבקות</span></div>`;
 }
 function invExport(){
-  const rows=invLoad();
+  const rows=invRows();
   if(!rows.length){alert("המלאי ריק — שמור שאריות מעבודה קודם");return;}
-  const head=["תאריך","שעה","חומר","אורך","עומק","לוח","עבודה","הערות"];
+  const head=["קוד","תאריך","שעה","חומר","אורך","עומק","לוח","עבודה","מדף","הערות"];
   const esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
-  const csv=[head.map(esc).join(",")].concat(rows.map(r=>[r.date,r.time,r.material,r.len,r.depth,r.slab,r.job,r.note].map(esc).join(","))).join("\r\n");
+  const csv=[head.map(esc).join(",")].concat(rows.map(r=>[remCode(r),r.date,r.time,r.material,r.len,r.depth,r.slab,r.job,r.shelf,r.note].map(esc).join(","))).join("\r\n");
   saveFile("remnants_inventory.csv", new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
+}
+
+/* ===== מלאי שאריות: מדף, מדבקה עם קוד סריקה, וסימון שארית שנוצלה ===== */
+const QR_LIB="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js";
+let INV_FILTER="";
+function invRows(){ // לשאריות ישנות אין מזהה: נותנים פעם אחת ושומרים
+  const rows=invLoad();let ch=false;
+  let n=remLastNo(rows);
+  rows.forEach((r,i)=>{if(!r.id){r.id="r"+Date.now().toString(36)+i;ch=true;}if(!r.no){r.no=++n;ch=true;}});
+  if(ch)remSetNo(n);
+  if(ch)invSave(rows);return rows;
+}
+// המספר הרץ לא חוזר על עצמו גם אחרי ששארית נוצלה ונמחקה
+function remLastNo(rows){let k=0;try{k=+localStorage.getItem(INV_KEY+"_no")||0;}catch(e){}return rows.reduce((m,r)=>Math.max(m,+r.no||0),k);}
+function remSetNo(n){try{localStorage.setItem(INV_KEY+"_no",String(n));}catch(e){}}
+function remEsc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function remCode(r){ // מספר רץ קצר וקריא על המדבקה
+  return r.no?"S"+r.no:"";
+}
+function remLink(r){
+  const o={i:r.id,n:r.no,m:r.material,l:r.len,d:r.depth,j:r.job||"",s:r.shelf||"",t:r.date||""};
+  const b=btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  return location.origin+location.pathname+"#rem="+b;
+}
+function remFromHash(){
+  const m=/^#rem=([A-Za-z0-9_-]+)/.exec(location.hash||"");if(!m)return null;
+  try{let b=m[1].replace(/-/g,"+").replace(/_/g,"/");while(b.length%4)b+="=";return JSON.parse(decodeURIComponent(escape(atob(b))));}catch(e){return null;}
+}
+function invShelf(id){
+  const rows=invRows(),r=rows.find(x=>x.id===id);if(!r)return;
+  const x=prompt("איפה השארית? (מדף, מקום במגרש)",r.shelf||"");if(x===null)return;
+  r.shelf=x.trim();invSave(rows);renderInv();
+}
+function invUsed(id){
+  if(!confirm("לסמן שהשארית נוצלה ולהוציא אותה מהמלאי?"))return;
+  invSave(invRows().filter(x=>x.id!==id));
+  if(remFromHash()){history.replaceState(null,"",location.pathname);document.getElementById("out").innerHTML="";return;}
+  renderInv();
+}
+function invShown(){const f=INV_FILTER.trim();return invRows().filter(r=>!f||[r.material,r.job,r.shelf,r.note].join(" ").includes(f));}
+function renderInv(){
+  const out=document.getElementById("out"),all=invRows(),rows=invShown();
+  out.innerHTML=`<div class="combo"><h3>מלאי שאריות</h3>
+    <div class="meta">${all.length} שאריות במכשיר הזה. כל שארית מקבלת מדבקה עם קוד סריקה: סורקים במצלמה של כל טלפון ורואים חומר, מידה, מדף ומאיזו עבודה נשארה.</div>
+    ${all.length?`<input placeholder="חיפוש: חומר, עבודה או מדף" value="${remEsc(INV_FILTER)}" oninput="INV_FILTER=this.value;renderInvList()" style="width:100%;margin-top:10px">`:""}
+    <div id="invList"></div>
+    ${all.length?`<div class="row" style="margin-top:12px"><button class="btn" style="flex:1" onclick="invPrint()">🏷 הדפסת מדבקות (${"<span id='invCnt'>"+rows.length+"</span>"})</button></div>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="invExport()">📊 ייצוא לאקסל</button></div>`
+      :`<div class="note" style="margin-top:10px">המלאי ריק. אחרי תוכנית חיתוך לוחצים על "שמור שאריות למלאי".</div>`}
+    <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="document.getElementById('out').innerHTML=''">סגירה</button></div></div>`;
+  renderInvList();out.scrollIntoView({behavior:"smooth"});
+}
+function renderInvList(){
+  const el=document.getElementById("invList");if(!el)return;const rows=invShown();
+  const c=document.getElementById("invCnt");if(c)c.textContent=rows.length;
+  el.innerHTML=rows.slice().reverse().map(r=>`<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px">
+    <div class="row"><b style="flex:1">${remEsc(r.len)}×${remEsc(r.depth)} · ${remEsc(r.material)}</b><span class="meta">${remCode(r)}</span></div>
+    <div class="meta">${r.shelf?"📍 "+remEsc(r.shelf):"<span style='color:#d98a00'>בלי מדף</span>"}${r.job?" · מעבודה "+remEsc(r.job):""}${r.date?" · "+remEsc(r.date):""}${r.note?" · "+remEsc(r.note):""}</div>
+    <div class="row" style="margin-top:6px;font-size:13px;gap:14px">
+      <span style="cursor:pointer;color:var(--amber)" onclick="invShelf('${r.id}')">📍 מדף</span>
+      <span style="cursor:pointer;color:var(--amber)" onclick="invPrint('${r.id}')">🏷 מדבקה</span>
+      <span style="cursor:pointer;color:#c0392b" onclick="invUsed('${r.id}')">נוצלה</span></div></div>`).join("")||(invRows().length?'<div class="note" style="margin-top:8px">אין תוצאות.</div>':"");
+}
+function qrLoad(){
+  if(window.qrcode)return Promise.resolve();
+  return new Promise((res,rej)=>{const s=document.createElement("script");s.src=QR_LIB;s.onload=res;s.onerror=()=>rej(new Error("לא הצלחתי לטעון את יוצר הקודים. צריך חיבור לאינטרנט."));document.head.appendChild(s);});
+}
+async function invPrint(id){
+  const rows=id?invRows().filter(r=>r.id===id):invShown();if(!rows.length)return;
+  const w=window.open("","_blank");if(!w){alert("הדפדפן חסם חלון חדש. צריך לאשר חלונות קופצים לאתר.");return;}
+  w.document.write("<p style='font-family:sans-serif'>מכין מדבקות…</p>");
+  try{await qrLoad();}catch(e){w.close();alert(e.message);return;}
+  const labels=rows.map(r=>{const q=qrcode(0,"M");q.addData(remLink(r));q.make();
+    return `<div class="lb"><div class="qr">${q.createSvgTag({cellSize:3,margin:0,scalable:true})}</div><div class="tx">
+      <div class="sz">${remEsc(r.len)}×${remEsc(r.depth)}</div><div class="mt">${remEsc(r.material)}</div>
+      ${r.shelf?`<div>📍 ${remEsc(r.shelf)}</div>`:""}${r.job?`<div>מעבודה: ${remEsc(r.job)}</div>`:""}
+      <div class="cd">${remCode(r)} · ${remEsc(r.date||"")}</div></div></div>`;}).join("");
+  w.document.open();
+  w.document.write(`<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8"><title>מדבקות שאריות</title><style>
+    body{font-family:Arial,sans-serif;margin:8mm}.lb{display:inline-flex;gap:3mm;width:88mm;height:42mm;box-sizing:border-box;border:1px dashed #999;padding:3mm;margin:1mm;vertical-align:top;page-break-inside:avoid;overflow:hidden}
+    .qr{width:34mm;height:34mm;flex:none}.qr svg{width:100%;height:100%}.tx{font-size:11pt;line-height:1.3;overflow:hidden}.sz{font-size:20pt;font-weight:700}.mt{font-weight:700}.cd{color:#555;font-size:9pt;margin-top:1mm}
+    @media print{.lb{border-color:#ccc}}</style></head><body>${labels}<script>setTimeout(()=>print(),300)<\/script></body></html>`);
+  w.document.close();
+}
+function remShowScanned(){
+  const o=remFromHash();if(!o)return;
+  const mine=invRows().find(r=>r.id===o.i);
+  document.getElementById("out").innerHTML=`<div class="combo"><h3>שארית ${remEsc(o.l)}×${remEsc(o.d)}</h3>
+    <div style="font-size:18px;font-weight:700;margin-top:6px">${remEsc(o.m)}${o.n?` <span class="meta">S${remEsc(o.n)}</span>`:""}</div>
+    <div class="meta" style="margin-top:6px">${o.s?"📍 "+remEsc(o.s)+" · ":""}${o.j?"מעבודה "+remEsc(o.j)+" · ":""}${remEsc(o.t)}</div>
+    <div class="meta" style="margin-top:6px">${mine?"השארית רשומה במלאי של המכשיר הזה.":"השארית לא רשומה במכשיר הזה. המידע מגיע מהמדבקה עצמה."}</div>
+    ${mine?`<div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="invUsed('${mine.id}')">✓ השארית נוצלה</button></div>`:""}
+    <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="history.replaceState(null,'',location.pathname);renderInv()">למלאי</button></div></div>`;
 }
 
 
@@ -1081,7 +1178,7 @@ function remnantFor(piece){
 }
 function remnantNote(pieces){
   const hits=[];
-  (pieces||[]).forEach(p=>{ const m=remnantFor(p); if(m)hits.push(`${p.len}×${p.depth} → יש שארית ${m.row.len}×${m.row.depth} (${m.row.material})${m.rot?" בסיבוב":""}`); });
+  (pieces||[]).forEach(p=>{ const m=remnantFor(p); if(m)hits.push(`${p.len}×${p.depth} → יש שארית ${m.row.len}×${m.row.depth} (${m.row.material})${m.row.shelf?" ב"+m.row.shelf:""}${m.row.no?" "+remCode(m.row):""}${m.rot?" בסיבוב":""}`); });
   return hits;
 }
 
@@ -1433,4 +1530,6 @@ async function generateSimple(){
     document.getElementById("sdxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,SKETCH.job||"",j.dxf);}};
   }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
 }
+remShowScanned();
+window.addEventListener("hashchange",remShowScanned);
 </script></body></html>
