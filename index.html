@@ -85,6 +85,8 @@ input,select,textarea{background:#fff!important;border:1.5px solid var(--line)!i
     </div>
     <div style="margin-top:12px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderProdReport()">📊 דוח ייצור: מה נחתך החודש</span></div>
     <div style="margin-top:8px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderJobs()">📋 לוח עבודות: מהמדידה ועד ההתקנה</span></div>
+    <div style="margin-top:8px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderSaw()">🪚 מסור ותחזוקה</span></div>
+    <div id="sawAlert"></div>
   </div>
 </div>
 
@@ -806,6 +808,7 @@ function prodLog(ch,job,dxf,mat){
     cut_m:u.cut_m??null,mitre_m:u.mitre_m??null});
   try{localStorage.setItem(PROD_KEY,JSON.stringify(rows));}catch(e){}
   jobsMarkCut(String(job||"").startsWith("חיתוך משותף: ")?String(job).slice(13).split(", "):[job]);
+  sawStartNote();
 }
 function prodMonths(rows){return [...new Set(rows.map(r=>r.date.slice(0,7)))].sort().reverse();}
 function renderProdReport(month){
@@ -836,6 +839,99 @@ function prodExport(){
   const esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
   const csv=[head.map(esc).join(",")].concat(rows.map(r=>[r.date,r.time,r.job,MATERIALS[r.mat]?MATERIALS[r.mat].he:r.mat,r.slabs,r.pieces_m2,r.slabs_m2,r.cut_m,r.mitre_m].map(esc).join(","))).join("\r\n");
   saveFile("production_log.csv",new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
+}
+
+/* ===== מסור ותחזוקה: כמה מטר עבר המסור, ומה צריך לעשות במכונה ===== */
+const SAW_KEY="stoneai_saw_v1";
+const SAW_WARN=0.9;
+function sawLoad(){let o=null;try{o=JSON.parse(localStorage.getItem(SAW_KEY)||"null");}catch(e){}
+  // משימה אחת מוגדרת מראש, מתוך מדריך הפרוליינר: ניקוי החוט פעם בשבוע
+  return o||{blades:[],tasks:[{id:"t0",name:"ניקוי חוט המדידה של הפרוליינר, במטלית יבשה בלבד",days:7,last:""}]};}
+function sawSave(o){try{localStorage.setItem(SAW_KEY,JSON.stringify(o));return true;}catch(e){alert("לא הצלחתי לשמור במכשיר");return false;}}
+function sawCurrent(o){return (o||sawLoad()).blades.find(b=>!b.end)||null;}
+// מטרים על המסור: חיתוך וגרונג מכל קובץ מכונה שירד מאז ההרכבה. קובץ מיום ההחלפה נספר על המסור החדש
+function sawMeters(b){
+  const rows=prodLoad().filter(r=>r.date>=b.since&&(!b.end||r.date<b.end));
+  return {m:Math.round(rows.reduce((s,r)=>s+(+r.cut_m||0)+(+r.mitre_m||0),0)*10)/10,noLen:rows.filter(r=>r.cut_m==null).length};
+}
+function sawDaysSince(d){return d?Math.floor((new Date(jToday())-new Date(d))/864e5):null;}
+function sawDue(t){const n=sawDaysSince(t.last);return n==null?0:t.days-n;}   // ימים עד הפעם הבאה; שלילי = באיחור
+function sawAlerts(){
+  const o=sawLoad(),b=sawCurrent(o),out=[];
+  if(b&&b.life_m){const m=sawMeters(b).m;if(m>=b.life_m*SAW_WARN)out.push(m>=b.life_m?`המסור עבר ${m} מטר, יותר מ־${b.life_m} שהוגדרו לו`:`המסור קרוב לסוף: ${m} מתוך ${b.life_m} מטר`);}
+  o.tasks.forEach(t=>{if(t.last&&sawDue(t)<0)out.push(`תחזוקה באיחור: ${t.name}`);});
+  return out;
+}
+function sawStartNote(){
+  const el=document.getElementById("sawAlert");if(!el)return;
+  const a=sawAlerts();
+  el.innerHTML=a.length?`<div class="man" style="margin-top:10px;cursor:pointer" onclick="renderSaw()">🪚 ${a.map(jEsc).join("<br>")}</div>`:"";
+}
+function sawNewBlade(){
+  const v=id=>document.getElementById(id).value.trim();
+  const name=v("sbName")||"מסור",life=parseFloat(v("sbLife"))||0,since=v("sbSince")||jToday();
+  const o=sawLoad(),cur=sawCurrent(o);
+  if(cur){if(!confirm("לסמן שהמסור הנוכחי הוחלף?"))return;if(since<cur.since){alert("תאריך ההרכבה לפני המסור הקודם");return;}cur.end=since;cur.final_m=sawMeters(cur).m;}
+  o.blades.push({id:"b"+Date.now().toString(36),name,life_m:life,since});
+  if(sawSave(o)){SAW_FORM=false;renderSaw();}
+}
+function sawSetLife(){
+  const o=sawLoad(),b=sawCurrent(o);if(!b)return;
+  const x=prompt("כמה מטר המסור הזה אמור לחתוך? (ריק = בלי התראה)",b.life_m||"");if(x===null)return;
+  b.life_m=parseFloat(x)||0;sawSave(o);renderSaw();
+}
+function sawTaskDone(id){const o=sawLoad(),t=o.tasks.find(x=>x.id===id);if(!t)return;t.last=jToday();sawSave(o);renderSaw();}
+function sawTaskAdd(){
+  const name=document.getElementById("stName").value.trim(),days=parseInt(document.getElementById("stDays").value,10);
+  if(!name||!(days>0)){alert("צריך שם למשימה וכל כמה ימים");return;}
+  const o=sawLoad();o.tasks.push({id:"t"+Date.now().toString(36),name,days,last:jToday()});
+  if(sawSave(o))renderSaw();
+}
+function sawTaskDel(id){if(!confirm("למחוק את משימת התחזוקה?"))return;const o=sawLoad();o.tasks=o.tasks.filter(x=>x.id!==id);sawSave(o);renderSaw();}
+let SAW_FORM=false;
+function renderSaw(){
+  const out=document.getElementById("out"),o=sawLoad(),b=sawCurrent(o);
+  let bladeHtml;
+  if(b){const mm=sawMeters(b),pct=b.life_m?Math.min(100,Math.round(100*mm.m/b.life_m)):null;
+    const col=pct==null?"var(--amber)":pct>=100?"#b42318":pct>=SAW_WARN*100?"#d98a00":"#39b96a";
+    bladeHtml=`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px">
+      <div class="row"><b style="flex:1">${jEsc(b.name)}</b><span class="meta">הורכב ${jDate(b.since)}</span></div>
+      <div style="font-size:22px;font-weight:700;margin-top:6px">${mm.m} מטר${b.life_m?` <span class="meta">מתוך ${b.life_m}</span>`:""}</div>
+      ${pct!=null?`<div style="height:10px;border-radius:6px;background:var(--panel2);margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col}"></div></div>
+        <div class="meta" style="margin-top:4px">${pct>=100?"עבר את אורך החיים שהוגדר":`נשארו בערך ${Math.max(0,Math.round((b.life_m-mm.m)*10)/10)} מטר`}</div>`
+        :`<div class="meta" style="margin-top:4px">לא הוגדר כמה מטר המסור אמור לחתוך, לכן אין התראה.</div>`}
+      ${mm.noLen?`<div class="meta">${mm.noLen} קבצים ישנים בלי מדידת אורך לא נספרו.</div>`:""}
+      <div style="margin-top:8px;font-size:13px"><span style="cursor:pointer;color:var(--amber)" onclick="sawSetLife()">שינוי אורך החיים</span></div>
+    </div>`;}
+  else bladeHtml=`<div class="note" style="margin-top:10px">עוד לא נרשם מסור. רושמים את המסור שעל המכונה עכשיו, ומאותו יום כל קובץ שיורד מכאן נספר עליו.</div>`;
+  const past=o.blades.filter(x=>x.end&&x.final_m>0);
+  const avg=past.length?Math.round(past.reduce((s,x)=>s+x.final_m,0)/past.length):null;
+  const form=`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px">
+    <div style="font-weight:700;margin-bottom:8px">${b?"החלפתי מסור":"רישום המסור שעל המכונה"}</div>
+    <input id="sbName" placeholder="שם או סוג המסור" style="width:100%;margin-bottom:6px">
+    <input id="sbLife" type="number" inputmode="numeric" placeholder="כמה מטר הוא אמור לחתוך (לפי היצרן או הניסיון)" value="${avg||""}" style="width:100%;margin-bottom:6px">
+    <div class="row" style="margin-bottom:6px"><span>תאריך הרכבה</span><input id="sbSince" type="date" value="${jToday()}" style="flex:1"></div>
+    ${avg?`<div class="meta" style="margin-bottom:6px">המסורים הקודמים עברו בממוצע ${avg} מטר.</div>`:""}
+    <div class="row"><button class="btn" style="flex:1" onclick="sawNewBlade()">שמירה</button><button class="btn ghost" style="flex:1" onclick="SAW_FORM=false;renderSaw()">ביטול</button></div></div>`;
+  const tasks=o.tasks.slice().sort((x,y)=>sawDue(x)-sawDue(y)).map(t=>{const d=sawDue(t);
+    const st=!t.last?"עוד לא סומן":d<0?`<span style="color:#b42318;font-weight:700">באיחור של ${-d} ימים</span>`:d===0?`<span style="color:#d98a00;font-weight:700">היום</span>`:`בעוד ${d} ימים`;
+    return `<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px">
+      <div><b>${jEsc(t.name)}</b></div><div class="meta">כל ${t.days} ימים · ${st}${t.last?" · בוצע לאחרונה "+jDate(t.last):""}</div>
+      <div class="row" style="margin-top:6px;font-size:13px"><button class="btn ghost" style="flex:1;padding:6px" onclick="sawTaskDone('${t.id}')">✓ בוצע היום</button>
+      <span style="cursor:pointer;color:#c0392b" onclick="sawTaskDel('${t.id}')">מחיקה</span></div></div>`;}).join("");
+  sawStartNote();
+  out.innerHTML=`<div class="combo"><h3>מסור ותחזוקה</h3>
+    <div class="meta">המטרים נספרים מכל קובץ מכונה שירד מהמכשיר הזה: חיתוך וגרונג יחד. הנתונים נשמרים במכשיר בלבד.</div>
+    ${bladeHtml}
+    ${SAW_FORM?form:`<div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="SAW_FORM=true;renderSaw()">${b?"🔄 החלפתי מסור":"+ רישום מסור"}</button></div>`}
+    ${past.length?`<div class="meta" style="margin-top:8px">מסורים קודמים: ${past.slice(-5).reverse().map(x=>`${jEsc(x.name)} ${x.final_m} מטר (${jDate(x.since)} עד ${jDate(x.end)})`).join(" · ")}</div>`:""}
+    <div style="margin-top:16px;font-weight:700">תחזוקה תקופתית</div>
+    <div class="meta">מוסיפים כל משימה שחוזרת במכונה, וכל כמה ימים. כשמשהו באיחור, מופיעה תזכורת במסך הפתיחה.</div>
+    ${tasks||'<div class="note" style="margin-top:8px">אין משימות.</div>'}
+    <div class="row" style="margin-top:10px;gap:6px"><input id="stName" placeholder="משימה חדשה, למשל: שימון" style="flex:3"><input id="stDays" type="number" inputmode="numeric" placeholder="ימים" style="flex:1;min-width:70px"></div>
+    <div class="row" style="margin-top:6px"><button class="btn ghost" style="flex:1" onclick="sawTaskAdd()">+ הוספת משימה</button></div>
+    <div class="row" style="margin-top:12px"><button class="btn ghost" style="flex:1" onclick="SAW_FORM=false;document.getElementById('out').innerHTML='';sawStartNote()">סגירה</button></div></div>`;
+  out.scrollIntoView({behavior:"smooth"});
 }
 
 /* ===== לוח עבודות למפעל: לקוח, חומר, סטטוס, מהמדידה ועד ההתקנה ===== */
@@ -1433,4 +1529,5 @@ async function generateSimple(){
     document.getElementById("sdxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,SKETCH.job||"",j.dxf);}};
   }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
 }
+sawStartNote();
 </script></body></html>
