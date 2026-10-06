@@ -84,6 +84,7 @@ input,select,textarea{background:#fff!important;border:1.5px solid var(--line)!i
       <div class="opt" onclick="go('manual')"><div class="ic">✏️</div><b>הזנה ידנית</b><span>ישר · L · U — עם פתחים ועיבוד</span></div>
     </div>
     <div style="margin-top:12px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderProdReport()">📊 דוח ייצור: מה נחתך החודש</span></div>
+    <div style="margin-top:8px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderJobs()">📋 לוח עבודות: מהמדידה ועד ההתקנה</span></div>
   </div>
 </div>
 
@@ -804,6 +805,7 @@ function prodLog(ch,job,dxf,mat){
   rows.push({sig,date:day,time:d.toTimeString().slice(0,5),job:job||"",mat,slabs:u.slabs,pieces_m2:u.pieces_m2,slabs_m2:u.slabs_m2,
     cut_m:u.cut_m??null,mitre_m:u.mitre_m??null});
   try{localStorage.setItem(PROD_KEY,JSON.stringify(rows));}catch(e){}
+  jobsMarkCut(String(job||"").startsWith("חיתוך משותף: ")?String(job).slice(13).split(", "):[job]);
 }
 function prodMonths(rows){return [...new Set(rows.map(r=>r.date.slice(0,7)))].sort().reverse();}
 function renderProdReport(month){
@@ -834,6 +836,92 @@ function prodExport(){
   const esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
   const csv=[head.map(esc).join(",")].concat(rows.map(r=>[r.date,r.time,r.job,MATERIALS[r.mat]?MATERIALS[r.mat].he:r.mat,r.slabs,r.pieces_m2,r.slabs_m2,r.cut_m,r.mitre_m].map(esc).join(","))).join("\r\n");
   saveFile("production_log.csv",new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
+}
+
+/* ===== לוח עבודות למפעל: לקוח, חומר, סטטוס, מהמדידה ועד ההתקנה ===== */
+const JOBS_KEY="stoneai_jobs_v1";
+const JOB_ST=["נמדד","אושר","נחתך","עובד","הותקן"];
+let JOB_FILTER="פתוחות", JOB_EDIT=null;
+function jobsLoad(){try{return JSON.parse(localStorage.getItem(JOBS_KEY)||"[]");}catch(e){return [];}}
+function jobsSave(r){try{localStorage.setItem(JOBS_KEY,JSON.stringify(r));return true;}catch(e){alert("לא הצלחתי לשמור במכשיר");return false;}}
+function jEsc(v){return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function jToday(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function jDate(d){return d?d.slice(8)+"/"+d.slice(5,7):"";}
+// קובץ מכונה שירד לעבודה בשם זהה מקדם אותה ל"נחתך", רק אם היא עדיין לפני החיתוך
+function jobsMarkCut(names){
+  const want=names.map(n=>String(n||"").trim()).filter(Boolean);if(!want.length)return;
+  const rows=jobsLoad();let ch=false;
+  rows.forEach(r=>{if(want.includes(r.name.trim())&&JOB_ST.indexOf(r.status)<2){r.status="נחתך";r.hist.push({s:"נחתך",d:jToday(),auto:1});ch=true;}});
+  if(ch)jobsSave(rows);
+}
+function jobForm(r){
+  r=r||{name:"",phone:"",addr:"",mat:MAT,status:"נמדד",install:"",notes:""};
+  return `<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px">
+    <div style="font-weight:700;margin-bottom:8px">${r.id?"עריכת עבודה":"עבודה חדשה"}</div>
+    <input id="jName" placeholder="שם העבודה או הלקוח" value="${jEsc(r.name)}" style="width:100%;margin-bottom:6px">
+    <input id="jPhone" placeholder="טלפון" inputmode="tel" value="${jEsc(r.phone)}" style="width:100%;margin-bottom:6px">
+    <input id="jAddr" placeholder="כתובת" value="${jEsc(r.addr)}" style="width:100%;margin-bottom:6px">
+    <div class="row" style="margin-bottom:6px"><span>חומר</span><select id="jMat" style="flex:1">${Object.keys(MATERIALS).map(k=>`<option value="${k}" ${k===r.mat?"selected":""}>${MATERIALS[k].he}</option>`).join("")}</select></div>
+    <div class="row" style="margin-bottom:6px"><span>סטטוס</span><select id="jSt" style="flex:1">${JOB_ST.map(x=>`<option ${x===r.status?"selected":""}>${x}</option>`).join("")}</select></div>
+    <div class="row" style="margin-bottom:6px"><span>תאריך התקנה</span><input id="jInst" type="date" value="${jEsc(r.install)}" style="flex:1"></div>
+    <textarea id="jNotes" rows="3" placeholder="הערות" style="width:100%">${jEsc(r.notes)}</textarea>
+    <div class="row" style="margin-top:8px"><button class="btn" style="flex:1" onclick="jobSaveForm()">שמירה</button>
+      <button class="btn ghost" style="flex:1" onclick="JOB_EDIT=null;renderJobs()">ביטול</button></div>
+    ${r.id?`<div style="margin-top:8px;font-size:13px"><span style="cursor:pointer;color:#c0392b" onclick="jobDelete('${r.id}')">מחיקת העבודה</span></div>`:""}
+  </div>`;
+}
+function jobSaveForm(){
+  const v=id=>document.getElementById(id).value.trim();
+  const name=v("jName");if(!name){alert("צריך שם לעבודה");return;}
+  const rows=jobsLoad(),st=v("jSt");
+  let r=JOB_EDIT&&JOB_EDIT!=="new"?rows.find(x=>x.id===JOB_EDIT):null;
+  if(!r){r={id:"j"+Date.now().toString(36),created:jToday(),hist:[]};rows.push(r);}
+  if(r.status!==st)r.hist.push({s:st,d:jToday()});
+  Object.assign(r,{name,phone:v("jPhone"),addr:v("jAddr"),mat:v("jMat"),status:st,install:v("jInst"),notes:v("jNotes")});
+  if(jobsSave(rows)){JOB_EDIT=null;renderJobs();}
+}
+function jobStep(id,dir){
+  const rows=jobsLoad(),r=rows.find(x=>x.id===id);if(!r)return;
+  const i=JOB_ST.indexOf(r.status)+dir;if(i<0||i>=JOB_ST.length)return;
+  r.status=JOB_ST[i];r.hist.push({s:r.status,d:jToday()});jobsSave(rows);renderJobs();
+}
+function jobDelete(id){if(!confirm("למחוק את העבודה?"))return;jobsSave(jobsLoad().filter(x=>x.id!==id));JOB_EDIT=null;renderJobs();}
+function renderJobs(){
+  const out=document.getElementById("out"),all=jobsLoad();
+  const cnt=s=>all.filter(r=>r.status===s).length;
+  const tabs=["פתוחות"].concat(JOB_ST,["הכל"]);
+  const rows=all.filter(r=>JOB_FILTER==="הכל"||(JOB_FILTER==="פתוחות"?r.status!=="הותקן":r.status===JOB_FILTER))
+    .sort((a,b)=>JOB_ST.indexOf(a.status)-JOB_ST.indexOf(b.status)||(a.created<b.created?-1:1));
+  const next=all.filter(r=>r.status==="אושר").sort((a,b)=>(a.created+a.id)<(b.created+b.id)?-1:1)[0];
+  const card=r=>{const last=r.hist.length?r.hist[r.hist.length-1]:null,i=JOB_ST.indexOf(r.status);
+    return `<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px">
+      <div class="row"><b style="flex:1">${jEsc(r.name)}</b><span style="font-size:13px;padding:2px 8px;border-radius:8px;background:var(--panel2)">${r.status}</span></div>
+      <div class="meta">${MATERIALS[r.mat]?MATERIALS[r.mat].he:jEsc(r.mat)}${r.addr?" · "+jEsc(r.addr):""}${r.phone?` · <a href="tel:${jEsc(r.phone)}">${jEsc(r.phone)}</a>`:""}</div>
+      <div class="meta">נפתחה ${jDate(r.created)}${last?" · "+last.s+" "+jDate(last.d)+(last.auto?" (מקובץ המכונה)":""):""}${r.install?" · התקנה "+jDate(r.install):""}</div>
+      ${r.notes?`<div class="meta" style="white-space:pre-wrap">${jEsc(r.notes)}</div>`:""}
+      <div class="row" style="margin-top:6px;font-size:13px;gap:14px">
+        ${i>0?`<span style="cursor:pointer;color:var(--amber)" onclick="jobStep('${r.id}',-1)">→ ${JOB_ST[i-1]}</span>`:""}
+        ${i<JOB_ST.length-1?`<span style="cursor:pointer;color:var(--amber);font-weight:700" onclick="jobStep('${r.id}',1)">${JOB_ST[i+1]} ←</span>`:""}
+        <span style="cursor:pointer;color:var(--amber)" onclick="JOB_EDIT='${r.id}';renderJobs()">עריכה</span></div>
+    </div>`;};
+  const edit=JOB_EDIT==="new"?jobForm():JOB_EDIT?jobForm(all.find(x=>x.id===JOB_EDIT)):"";
+  out.innerHTML=`<div class="combo"><h3>לוח עבודות</h3>
+    <div class="meta">כל עבודה עוברת: ${JOB_ST.join(", ")}. כשיורד קובץ מכונה לעבודה באותו שם, היא עוברת לבד ל"נחתך". הנתונים נשמרים במכשיר הזה בלבד.</div>
+    ${next?`<div class="note" style="margin-top:10px">הבא בתור לחיתוך: <b>${jEsc(next.name)}</b> (${MATERIALS[next.mat]?MATERIALS[next.mat].he:""})</div>`:""}
+    ${edit||`<div class="row" style="margin-top:10px"><button class="btn" style="flex:1" onclick="JOB_EDIT='new';renderJobs()">+ עבודה חדשה</button></div>`}
+    <div class="row" style="margin-top:10px;font-size:13px;gap:6px">${tabs.map(t=>`<span onclick="JOB_FILTER='${t}';renderJobs()" style="cursor:pointer;padding:4px 10px;border-radius:9px;border:1px solid var(--line);${t===JOB_FILTER?"background:var(--amber);color:#fff;border-color:var(--amber)":""}">${t}${JOB_ST.includes(t)?" "+cnt(t):""}</span>`).join("")}</div>
+    ${rows.length?rows.map(card).join(""):`<div class="note" style="margin-top:10px">${all.length?"אין עבודות בסינון הזה.":"עדיין אין עבודות. לוחצים על עבודה חדשה כדי להתחיל."}</div>`}
+    ${all.length?`<div class="row" style="margin-top:12px"><button class="btn ghost" style="flex:1" onclick="jobsExport()">📊 ייצוא העבודות לאקסל</button></div>`:""}
+    <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="JOB_EDIT=null;document.getElementById('out').innerHTML=''">סגירה</button></div></div>`;
+  out.scrollIntoView({behavior:"smooth"});
+}
+function jobsExport(){
+  const rows=jobsLoad();if(!rows.length)return;
+  const head=["עבודה","טלפון","כתובת","חומר","סטטוס","נפתחה","תאריך התקנה","היסטוריה","הערות"];
+  const esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+  const csv=[head.map(esc).join(",")].concat(rows.map(r=>[r.name,r.phone,r.addr,MATERIALS[r.mat]?MATERIALS[r.mat].he:r.mat,r.status,r.created,r.install,
+    r.hist.map(h=>h.s+" "+h.d).join("; "),r.notes].map(esc).join(","))).join("\r\n");
+  saveFile("jobs.csv",new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));
 }
 
 /* ===== חתיכה ארוכה מהלוח → אפשרויות חלוקה ===== */
