@@ -1410,9 +1410,10 @@ async function generateSimple(){
   const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
   c.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
   try{
-    const res=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({pieces:expandQty(K).map(p=>({...p,edges:p.edges||{}})),cladding:expandQty(C).map(p=>({...p,edges:p.edges||{}})),material:MAT,...slabQ(),job_name:SKETCH.job||""})});
+    const payload={pieces:expandQty(K).map(p=>({...p,edges:p.edges||{}})),cladding:expandQty(C).map(p=>({...p,edges:p.edges||{}})),material:MAT,...slabQ(),job_name:SKETCH.job||""};
+    const res=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
     const j=await res.json();
+    LAST_PLAN=j.ok?{payload,layout:j.layout,mat:MAT,L:j.slabL||payload.slabL,W:j.slabW||payload.slabW}:null;
     if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
     const mat=MATERIALS[MAT];
     c.innerHTML=`<div class="combo"><h3>התוכנית מוכנה ✓</h3>
@@ -1426,11 +1427,165 @@ async function generateSimple(){
         <button class="btn ghost" style="flex:1" onclick="invExport()">📊 ייצוא מלאי לאקסל</button>
       </div>
       <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="shareJob()">↗ שתף תוכנית</button></div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="photoStart()">📷 הנחה על צילום הלוח האמיתי</button></div>
       <div id="invBox"></div><div id="shareBox"></div>
-      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>`;
+      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>
+      <div id="photoBox"></div>`;
     LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("spdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
     document.getElementById("sdxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,SKETCH.job||"",j.dxf);}};
   }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
+}
+
+/* ===== צילום הלוח האמיתי: מיישרים את התמונה לפי ארבע הפינות, מניחים עליה את החתיכות, ומזיזים כדי לתפוס עורק יפה או להתחמק מסדק ===== */
+let LAST_PLAN=null, PH=null;
+const PH_S=3;   // פיקסלים לס"מ בתמונה המיושרת
+const PH_CORNERS=["פינה 1: הפינה שעומדת בנקודת האפס של המכונה (בתוכנית היא למטה משמאל)","פינה 2: הפינה השנייה לאורך הצלע הארוכה","פינה 3: הפינה שמולה, בצד השני של הרוחב","פינה 4: הפינה האחרונה"];
+function photoStart(){
+  const P=LAST_PLAN;
+  if(!P||!P.layout){alert("המנוע עוד לא מעודכן לסידור על צילום הלוח.");return;}
+  const all=P.payload.pieces.concat(P.payload.cladding||[]);
+  PH={payload:P.payload,mat:P.mat,L:P.L,W:P.W,all,cur:0,sel:null,drag:null,
+    slabs:P.layout.map(row=>({img:null,warp:null,corners:[],items:row.map(it=>({i:it.i,x:it.x,y:it.y,rot:!!it.rot}))}))};
+  photoRender();
+  document.getElementById("photoBox").scrollIntoView({behavior:"smooth",block:"start"});
+}
+function phDims(it){const p=PH.all[it.i];return it.rot?[+p.depth,+p.len]:[+p.len,+p.depth];}
+function phProblems(sl){
+  const E=0.05,out=new Set(),bad=[];
+  sl.items.forEach((a,k)=>{const [l,d]=phDims(a);
+    if(a.x<-E||a.y<-E||a.x+l>PH.L+E||a.y+d>PH.W+E){out.add(k);bad.push("חתיכה "+(a.i+1)+" יוצאת מהלוח");}
+    sl.items.forEach((b,m)=>{if(m<=k)return;const [l2,d2]=phDims(b);
+      if(a.x<b.x+l2-E&&b.x<a.x+l-E&&a.y<b.y+d2-E&&b.y<a.y+d-E){out.add(k);out.add(m);bad.push("חתיכות "+(a.i+1)+" ו־"+(b.i+1)+" חופפות");}});});
+  return {out,bad};
+}
+function photoRender(){
+  const box=document.getElementById("photoBox");if(!box||!PH)return;
+  const sl=PH.slabs[PH.cur],picking=sl.img&&sl.corners.length<4;
+  const allBad=PH.slabs.reduce((n,s)=>n+phProblems(s).bad.length,0);
+  box.innerHTML=`<div class="combo"><h3>הנחה על צילום הלוח</h3>
+    <div class="meta">מצלמים את הלוח מלמעלה, מסמנים את ארבע הפינות, והתמונה מתיישרת לפי מידות הלוח ${PH.L}×${PH.W}. גוררים חתיכה כדי לתפוס עורק יפה או להתחמק מסדק.</div>
+    <div class="row" style="margin-top:10px">${PH.slabs.map((s,k)=>`<span onclick="PH.cur=${k};PH.sel=null;photoRender()" style="cursor:pointer;padding:6px 14px;border-radius:20px;border:1.5px solid ${k===PH.cur?"var(--amber)":"var(--line)"};font-size:13px">לוח ${k+1}${s.warp?" 📷":""}</span>`).join("")}</div>
+    <label class="btn ghost" style="display:block;text-align:center;margin-top:10px">📷 ${sl.img?"צילום אחר ללוח "+(PH.cur+1):"צלם את לוח "+(PH.cur+1)}
+      <input type="file" accept="image/*" capture="environment" style="display:none" onchange="photoPick(this)"></label>
+    ${picking?`<div class="chk" style="margin-top:8px"><b>הקש על ${PH_CORNERS[sl.corners.length]}</b></div>`:""}
+    ${sl.img&&!picking?`<div class="note"><span style="cursor:pointer;color:var(--amber)" onclick="PH.slabs[PH.cur].corners=[];PH.slabs[PH.cur].warp=null;photoRender()">סימון הפינות מחדש</span></div>`:""}
+    <canvas id="phCv" style="margin-top:10px;touch-action:none;background:#2b3038"></canvas>
+    <div id="phSel"></div><div id="phBad"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" style="flex:2" onclick="photoPlan()">צור תוכנית ו־DXF לפי הסידור הזה</button>
+      <button class="btn ghost" style="flex:1" onclick="photoSave()">שמור תמונה להצגה ללקוח</button></div>
+    ${allBad?`<div class="note">יש ${allBad} בעיות בסידור. אפשר ליצור קובץ רק אחרי שמתקנים אותן.</div>`:""}
+    <div id="phOut"></div></div>`;
+  const cv=document.getElementById("phCv");
+  cv.onpointerdown=phDown;cv.onpointermove=phMove;cv.onpointerup=cv.onpointercancel=()=>{if(PH.drag){PH.drag=null;photoRender();}};
+  photoDraw();
+}
+function photoPick(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;
+  const im=new Image();
+  im.onload=()=>{const sc=Math.min(1,2000/Math.max(im.width,im.height)),c=document.createElement("canvas");
+    c.width=Math.round(im.width*sc);c.height=Math.round(im.height*sc);c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+    const sl=PH.slabs[PH.cur];sl.img=c;sl.corners=[];sl.warp=null;URL.revokeObjectURL(im.src);photoRender();};
+  im.onerror=()=>alert("הקובץ שנבחר אינו תמונה שאפשר לקרוא.");
+  im.src=URL.createObjectURL(f);
+}
+/* מטריצת הומוגרפיה שממפה ארבע נקודות src לארבע נקודות dst */
+function homog(src,dst){
+  const A=[],b=[];
+  for(let k=0;k<4;k++){const [x,y]=src[k],[u,v]=dst[k];
+    A.push([x,y,1,0,0,0,-u*x,-u*y]);b.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);b.push(v);}
+  for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;
+    [A[c],A[p]]=[A[p],A[c]];[b[c],b[p]]=[b[p],b[c]];
+    if(Math.abs(A[c][c])<1e-12)return null;
+    for(let r=0;r<8;r++){if(r===c)continue;const f=A[r][c]/A[c][c];for(let k=c;k<8;k++)A[r][k]-=f*A[c][k];b[r]-=f*b[c];}}
+  const h=b.map((v,c)=>v/A[c][c]);return [...h,1];
+}
+function photoWarp(sl){
+  const L=PH.L,W=PH.W,ow=Math.round(L*PH_S),oh=Math.round(W*PH_S);
+  // נקודות הלוח בס"מ, y למעלה כמו בתוכנית ובמכונה
+  const H=homog([[0,0],[L,0],[L,W],[0,W]],sl.corners);
+  if(!H){alert("הפינות שסומנו לא יוצרות מרובע. נסה לסמן שוב.");sl.corners=[];return;}
+  const src=sl.img.getContext("2d").getImageData(0,0,sl.img.width,sl.img.height),sw=sl.img.width,sh=sl.img.height;
+  const out=document.createElement("canvas");out.width=ow;out.height=oh;
+  const g=out.getContext("2d"),dst=g.createImageData(ow,oh);
+  for(let py=0;py<oh;py++){const y=W-(py+0.5)/PH_S;
+    for(let px=0;px<ow;px++){const x=(px+0.5)/PH_S,w=H[6]*x+H[7]*y+1;
+      const u=Math.round((H[0]*x+H[1]*y+H[2])/w),v=Math.round((H[3]*x+H[4]*y+H[5])/w),o=(py*ow+px)*4;
+      if(u>=0&&v>=0&&u<sw&&v<sh){const s=(v*sw+u)*4;dst.data[o]=src.data[s];dst.data[o+1]=src.data[s+1];dst.data[o+2]=src.data[s+2];}
+      dst.data[o+3]=255;}}
+  g.putImageData(dst,0,0);sl.warp=out;
+}
+function photoDraw(){
+  const cv=document.getElementById("phCv");if(!cv)return;
+  const sl=PH.slabs[PH.cur],g=cv.getContext("2d");
+  if(sl.img&&sl.corners.length<4){   // שלב סימון הפינות: התמונה המקורית
+    cv.width=sl.img.width;cv.height=sl.img.height;g.drawImage(sl.img,0,0);g.direction="ltr";g.textAlign="left";
+    const r=Math.max(8,sl.img.width/90);
+    sl.corners.forEach(([x,y],k)=>{g.fillStyle="#1f6feb";g.beginPath();g.arc(x,y,r,0,7);g.fill();
+      g.fillStyle="#fff";g.font="bold "+Math.round(r*1.6)+"px Arial";g.fillText(String(k+1),x+r*1.3,y-r*1.3);});
+    if(sl.corners.length>1){g.strokeStyle="#1f6feb";g.lineWidth=r/3;g.beginPath();sl.corners.forEach(([x,y],k)=>k?g.lineTo(x,y):g.moveTo(x,y));g.stroke();}
+    return;
+  }
+  const S=PH_S;cv.width=Math.round(PH.L*S);cv.height=Math.round(PH.W*S);
+  g.direction="ltr";g.textAlign="left";   // הדף מימין לשמאל, והקנבס יורש את זה. המידות נכתבות משמאל לימין
+  if(sl.warp)g.drawImage(sl.warp,0,0);else{g.fillStyle="#d9dde3";g.fillRect(0,0,cv.width,cv.height);}
+  g.strokeStyle="#111820";g.lineWidth=2;g.strokeRect(1,1,cv.width-2,cv.height-2);
+  const {out,bad}=phProblems(sl);
+  sl.items.forEach((it,k)=>{const [l,d]=phDims(it),X=it.x*S,Y=(PH.W-it.y-d)*S,p=PH.all[it.i];
+    const red=out.has(k),sel=PH.sel===k;
+    g.fillStyle=red?"rgba(220,40,40,.28)":(sel?"rgba(31,111,235,.28)":"rgba(255,255,255,.16)");g.fillRect(X,Y,l*S,d*S);
+    g.strokeStyle=red?"#e02424":(sel?"#1f6feb":"#111820");g.lineWidth=sel?4:3;g.strokeRect(X,Y,l*S,d*S);
+    g.setLineDash([6,4]);g.lineWidth=2;
+    (p.openings||[]).forEach(o=>{if(!o.w||!o.h)return;   // הפתחים, כדי לראות איפה יוצא הכיור על העורק
+      const ox=+o.from_left_cm||0,oy=(o.from_front_cm!=null&&o.from_front_cm!=="")?+o.from_front_cm:+p.depth/2;
+      const cx=it.rot?it.x+(+p.depth-oy):it.x+ox,cy=it.rot?it.y+ox:it.y+oy,w=it.rot?+o.h:+o.w,h=it.rot?+o.w:+o.h;
+      g.strokeRect((cx-w/2)*S,(PH.W-cy-h/2)*S,w*S,h*S);});
+    g.setLineDash([]);
+    // המספר כמו בתוכנית, ובחתיכה רחבה מספיק גם המידות. גודל הכתב לפי רוחב הלוח, כדי שיהיה קריא בטלפון
+    const fs=Math.round(cv.width/34),full="#"+(it.i+1)+"  "+l+"×"+d;g.font="bold "+fs+"px Arial";
+    const t=g.measureText(full).width+fs<l*S?full:"#"+(it.i+1),tw=g.measureText(t).width;
+    g.fillStyle="rgba(17,24,32,.78)";g.fillRect(X+4,Y+4,tw+fs*0.6,fs*1.4);g.fillStyle="#fff";g.fillText(t,X+4+fs*0.3,Y+4+fs*1.05);});
+  const ss=document.getElementById("phSel");
+  if(ss)ss.innerHTML=PH.sel!=null&&sl.items[PH.sel]?`<div class="row" style="margin-top:8px"><span style="flex:1;font-size:13px">חתיכה ${sl.items[PH.sel].i+1} נבחרה · <span dir="ltr">${(()=>{const [l,d]=phDims(sl.items[PH.sel]);return l+"×"+d;})()}</span></span>
+    <button class="btn ghost" style="flex:1" onclick="phRotate()">סובב 90°</button></div>`:`<div class="note">${sl.items.length?"נוגעים בחתיכה כדי לבחור ולגרור אותה.":"אין חתיכות על הלוח הזה."}</div>`;
+  const bb=document.getElementById("phBad");if(bb)bb.innerHTML=bad.length?`<div class="chk bad">${bad.map(x=>"• "+x).join("<br>")}</div>`:"";
+}
+function phPt(e){const cv=e.currentTarget,r=cv.getBoundingClientRect();return [(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height];}
+function phDown(e){
+  const sl=PH.slabs[PH.cur],[px,py]=phPt(e);
+  if(sl.img&&sl.corners.length<4){sl.corners.push([px,py]);if(sl.corners.length===4)photoWarp(sl);photoRender();return;}
+  const x=px/PH_S,y=PH.W-py/PH_S;let hit=null;
+  sl.items.forEach((it,k)=>{const [l,d]=phDims(it);if(x>=it.x&&x<=it.x+l&&y>=it.y&&y<=it.y+d)hit=k;});
+  PH.sel=hit;
+  if(hit!=null){const it=sl.items[hit];PH.drag={dx:x-it.x,dy:y-it.y};e.currentTarget.setPointerCapture(e.pointerId);}
+  photoDraw();
+}
+function phMove(e){
+  if(!PH.drag||PH.sel==null)return;
+  const sl=PH.slabs[PH.cur],it=sl.items[PH.sel],[px,py]=phPt(e),snap=v=>Math.round(v*2)/2;
+  it.x=snap(px/PH_S-PH.drag.dx);it.y=snap(PH.W-py/PH_S-PH.drag.dy);photoDraw();
+}
+function phRotate(){const it=PH.slabs[PH.cur].items[PH.sel];if(!it)return;it.rot=!it.rot;photoDraw();photoRender();}
+function photoSave(){
+  const cv=document.getElementById("phCv");if(!cv)return;
+  const keep=PH.sel;PH.sel=null;photoDraw();
+  cv.toBlob(b=>{saveFile("slab_"+(PH.cur+1)+".png",b);PH.sel=keep;photoDraw();},"image/png");
+}
+async function photoPlan(){
+  const bad=PH.slabs.reduce((n,s)=>n+phProblems(s).bad.length,0);
+  if(bad){alert("יש בעיות בסידור (חתיכות חופפות או יוצאות מהלוח). מתקנים אותן לפני שיוצרים קובץ.");return;}
+  const placements=[];
+  PH.slabs.forEach((s,si)=>s.items.forEach(it=>{placements[it.i]={slab:si,x:it.x,y:it.y,rot:it.rot};}));
+  const o=document.getElementById("phOut");o.innerHTML='<div class="meta" style="margin-top:10px">יוצר תוכנית וקובץ לפי הסידור שלך…</div>';
+  try{
+    const j=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...PH.payload,placements})}).then(r=>r.json());
+    if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
+    PH.res=j;
+    o.innerHTML=`<div class="info" style="margin-top:12px"><b>התוכנית לפי הסידור שלך מוכנה</b>${checkHtml(j.check)}
+      <div class="row" style="margin-top:10px">
+        <button class="btn" style="flex:2" onclick="dlB64('cutting_plan_photo.pdf',PH.res.pdf,'application/pdf')">הורד תוכנית חיתוך (PDF) ↓</button>
+        <button class="btn ghost" style="flex:1" onclick="if(dxfGuard(PH.res.check)){download('cut_photo_'+PH.mat+'.dxf',PH.res.dxf);prodLog(PH.res.check,PH.payload.job_name||'',PH.res.dxf,PH.mat);}">הורד DXF ↓</button></div></div>`;
+  }catch(e){o.innerHTML='<div class="man" style="margin-top:10px">'+e.message+'</div>';}
 }
 </script></body></html>
