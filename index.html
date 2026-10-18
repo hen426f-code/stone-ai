@@ -167,6 +167,12 @@ function slabSet(k,L,W){const o=slabLoad();
   try{localStorage.setItem(SLAB_KEY,JSON.stringify(o));}catch(e){}
   slabApply();renderMats();}
 const slabQ=()=>({slabL:MATERIALS[MAT].slabL,slabW:MATERIALS[MAT].slabW});
+/* מחיר לוח שלם לכל חומר, כפי שהמפעל קונה. בלי מחיר לא מוצג שווי בכסף, ושום מחיר לא מנוחש */
+const SLABPRICE_KEY="stoneai_slabprice_v1";
+function slabPrice(k){try{const v=+JSON.parse(localStorage.getItem(SLABPRICE_KEY)||"{}")[k||MAT];return v>0?v:0;}catch(e){return 0;}}
+function slabPriceSet(k,v){let o={};try{o=JSON.parse(localStorage.getItem(SLABPRICE_KEY)||"{}");}catch(e){}
+  v=+v;if(v>0)o[k]=v;else delete o[k];try{localStorage.setItem(SLABPRICE_KEY,JSON.stringify(o));}catch(e){}renderMats();}
+const shekel=v=>"₪"+Math.round(v).toLocaleString("he-IL");
 const KERF=0.6,PRIO_ACI=[1,2,3,4,5,6,7,8,9,9],OPENING_ACI=9;
 const ACICOL={1:"#e6194b",2:"#f58231",3:"#3cb44b",4:"#42d4f4",5:"#4363d8",6:"#a24bd6",7:"#9a9a3a",8:"#00a0a0",9:"#e6194b"};
 let MAT="porcelan", MODE=null, PRODIM_PIECES=null;
@@ -179,13 +185,16 @@ warmEngine();setInterval(()=>{if(!document.hidden)warmEngine();},10*60*1000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)warmEngine();});
 function dlB64(name,b64,mime){const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);saveFile(name,new Blob([arr],{type:mime}));}
 /* בודק לפני חיתוך: בעיות ודאיות באדום, דברים לבדיקה בצהוב, וניצול הלוחות */
-function checkHtml(ch){
+function checkHtml(ch,mat,noMoney){
   if(!ch)return "";
+  mat=mat||MAT;
   const u=ch.usage||{};let h="";
   if(ch.errors&&ch.errors.length)h+='<div class="chk bad"><b>לפני חיתוך: '+ch.errors.length+' בעיות שחייבים לתקן</b><br>'+ch.errors.map(e=>"• "+e).join("<br>")+'</div>';
   if(ch.warnings&&ch.warnings.length)h+='<div class="chk"><b>לבדיקה</b><br>'+ch.warnings.map(w=>"• "+w).join("<br>")+'</div>';
   if(!h)h='<div class="chk ok">✓ הבדיקה לפני חיתוך עברה: החתיכות נכנסות בלוחות, והפתחים בתוך החתיכות בלי חפיפה.</div>';
   if(u.slabs)h+='<div class="note">ניצול הלוחות: '+u.used_pct+'% · '+u.pieces_m2+' מ״ר חתיכות מתוך '+u.slabs_m2+' מ״ר לוחות · '+u.waste_m2+' מ״ר לא נוצלו (חלקם שאריות למלאי)</div>';
+  const pr=slabPrice(mat);
+  if(u.slabs&&pr&&!noMoney)h+='<div class="note">בכסף: '+(u.slabs===1?'לוח אחד':u.slabs+' לוחות')+' × '+shekel(pr)+' = <b>'+shekel(u.slabs*pr)+'</b> · השטח שלא נוצל שווה כ־'+shekel(pr*u.waste_m2/(u.slabs_m2/u.slabs))+'</div>';
   return h;
 }
 function dxfGuard(ch){
@@ -589,7 +598,11 @@ function renderMats(){const m=document.getElementById("mats");m.innerHTML="";
   e.innerHTML=`<span>מידות הלוח שלך ל${v.he}:</span>
     <input type="number" value="${v.slabL}" style="width:70px" id="slabL"> × <input type="number" value="${v.slabW}" style="width:70px" id="slabW"> ס״מ
     <span style="cursor:pointer;color:var(--amber)" onclick="slabSet('${MAT}',document.getElementById('slabL').value,document.getElementById('slabW').value)">שמירה</span>
-    ${cust?`<span style="cursor:pointer;color:var(--muted,#888)" onclick="slabSet('${MAT}',null)">חזרה ל־${SLAB_DEF[MAT].slabL}×${SLAB_DEF[MAT].slabW}</span>`:""}`;
+    ${cust?`<span style="cursor:pointer;color:var(--muted,#888)" onclick="slabSet('${MAT}',null)">חזרה ל־${SLAB_DEF[MAT].slabL}×${SLAB_DEF[MAT].slabW}</span>`:""}
+    <span style="flex-basis:100%;height:0"></span>
+    <span>מחיר לוח ${v.he} שלם:</span> <input type="number" min="0" value="${slabPrice(MAT)||""}" placeholder="₪" style="width:90px" id="slabPr">
+    <span style="cursor:pointer;color:var(--amber)" onclick="slabPriceSet('${MAT}',document.getElementById('slabPr').value)">שמירה</span>
+    <span class="meta" style="font-size:12px">כדי לראות כמה כסף החיסכון שווה</span>`;
   m.appendChild(e);}
 function hideAll(){["start","matcard","prodim","upload","manual"].forEach(id=>document.getElementById(id).classList.add("hidden"));document.getElementById("out").innerHTML="";}
 function home(){hideAll();document.getElementById("start").classList.remove("hidden");}
@@ -1066,18 +1079,69 @@ function drawLive(){const el=document.getElementById("liveSVG");if(el)el.innerHT
 
 /* ===== התאמת שאריות מהמלאי (חייב להיות גדול ב-2 ס"מ לפחות בשני הצדדים) ===== */
 const REM_MARGIN=2;
-function remnantFor(piece){
+function remnantFor(piece,skip){
   if(!piece||!piece.len||!piece.depth)return null;
   const need_l=piece.len+REM_MARGIN, need_d=piece.depth+REM_MARGIN;
   const rows=invLoad(); let best=null;
-  rows.forEach(r=>{
+  rows.forEach((r,idx)=>{
+    if(skip&&skip.has(idx))return;
     const L=parseFloat(r.len), D=parseFloat(r.depth); if(!L||!D)return;
     const fits=(L>=need_l&&D>=need_d), fitsRot=(L>=need_d&&D>=need_l);
     if(!fits&&!fitsRot)return;
     const waste=(L*D)-(piece.len*piece.depth);
-    if(!best||waste<best.waste)best={row:r,waste,rot:(!fits&&fitsRot)};
+    if(!best||waste<best.waste)best={row:r,idx,waste,rot:(!fits&&fitsRot)};
   });
   return best;
+}
+/* חיתוך משארית: חתיכה שסומנה יוצאת מהסידור על הלוחות ומקבלת קובץ משלה בגודל השארית */
+function remPieces(){
+  const cbx=sketchCombos();
+  const K=(cbx&&SKETCH.combo>=0&&cbx[SKETCH.combo])?cbx[SKETCH.combo].pieces:SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
+  return {K,C:SKETCH.cladding.filter(p=>p.len>0&&p.depth>0)};
+}
+function remMatches(){   // לכל חתיכה השארית הכי חסכונית, בלי ששתי חתיכות יקבלו את אותה שארית
+  const {K,C}=remPieces(),taken=new Set(),out=[];
+  [["k",K],["c",C]].forEach(([kind,arr])=>arr.forEach((p,i)=>{
+    if((parseInt(p.qty)||1)>1)return;
+    const m=remnantFor(p,taken);if(!m)return;
+    taken.add(m.idx);out.push({key:kind+i+":"+p.len+"x"+p.depth,kind,p,m});
+  }));
+  return out;
+}
+const remChosen=()=>remMatches().filter(h=>SKETCH.useRem&&SKETCH.useRem[h.key]);
+const remName=r=>(r.no?"S"+r.no+" ":"")+r.len+"×"+r.depth+(r.material?" ("+r.material+")":"")+(r.shelf?" · מדף "+r.shelf:"");
+function invTake(row){   // השארית נחתכה: יוצאת מהמלאי
+  const rows=invLoad(),k=rows.findIndex(r=>row.id?r.id===row.id:JSON.stringify(r)===JSON.stringify(row));
+  if(k<0)return false;rows.splice(k,1);return invSave(rows);
+}
+async function remRun(box){
+  const hits=remChosen();if(!hits.length)return;
+  box.innerHTML='<div class="meta" style="margin-top:12px">מכין קובץ לכל חתיכה שנחתכת משארית…</div>';
+  const res=[];
+  for(const h of hits){
+    const L=Math.max(+h.m.row.len,+h.m.row.depth),W=Math.min(+h.m.row.len,+h.m.row.depth);
+    try{
+      const j=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({pieces:[{...h.p,edges:h.p.edges||{}}],material:MAT,slabL:L,slabW:W,remnant:true,job_name:SKETCH.job||""})}).then(r=>r.json());
+      if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
+      // מנוע ישן מתעלם ממידות השארית ומסדר על לוח שלם. קובץ כזה לא שולחים למכונה
+      if(+j.slabL!==L||+j.slabW!==W)throw new Error("המנוע עוד לא מעודכן לחיתוך משארית");
+      res.push({h,j});
+    }catch(e){res.push({h,err:e.message});}
+  }
+  REM_RESULTS=res;
+  box.innerHTML=`<div class="info" style="margin-top:12px"><b>חתיכות משאריות</b> · כל קובץ מסודר על השארית עצמה. מניחים את השארית בפינת האפס של המכונה.
+    ${res.map((x,i)=>`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
+      ${bEsc(x.h.p.label||"חתיכה")} ${x.h.p.len}×${x.h.p.depth} ← שארית ${bEsc(remName(x.h.m.row))}
+      ${x.err?`<div class="man">${bEsc(x.err)}</div>`:`${checkHtml(x.j.check,MAT,true)}
+      <div class="row" style="margin-top:6px"><button class="btn ghost" style="flex:1" onclick="remDxf(${i})">הורד DXF לשארית ↓</button></div>`}</div>`).join("")}</div>`;
+}
+let REM_RESULTS=[];
+function remDxf(i){
+  const x=REM_RESULTS[i];if(!x||!x.j||!dxfGuard(x.j.check))return;
+  download("remnant_"+(x.h.m.row.no?"S"+x.h.m.row.no:i+1)+"_"+MAT+".dxf",x.j.dxf);
+  prodLog(x.j.check,(SKETCH.job||"")+" · משארית",x.j.dxf);
+  if(confirm("להוציא את השארית "+remName(x.h.m.row)+" מהמלאי?"))invTake(x.h.m.row);
 }
 function remnantNote(pieces){
   const hits=[];
@@ -1128,11 +1192,13 @@ function renderSketchTable(){
         ${cb.map((c,i)=>`<div onclick="SKETCH.combo=${i};renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===i?"var(--amber)":"var(--line)"};background:${SKETCH.combo===i?"rgba(240,165,0,.12)":"transparent"};font-size:13px">${c.title}<br><span class="meta">${c.note}</span>${c.suspect?`<br><span style="color:#e0a03a;font-size:11px">⚠ ${c.suspect}</span>`:""}</div>`).join("")}
         <div onclick="SKETCH.combo=-1;renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===-1?"var(--amber)":"var(--line)"};font-size:13px">בלי פינה</div>
       </div></div>`:""}
-    ${(()=>{const cbx=sketchCombos();
-      const pcs=(cbx&&SKETCH.combo>=0&&cbx[SKETCH.combo])?cbx[SKETCH.combo].pieces:K.filter(p=>p.len>0&&p.depth>0);
-      const hits=remnantNote(pcs.concat(C.filter(p=>p.len>0&&p.depth>0)));
+    ${(()=>{const hits=remMatches();
       return hits.length?`<div style="margin-top:12px;padding:10px;border:1px solid #4aBE82;border-radius:10px;font-size:13px">
-        <b style="color:#4aBE82">יש לך שאריות מתאימות במלאי</b><br>${hits.map(h=>"• "+h).join("<br>")}</div>`:"";})()}
+        <b style="color:#4aBE82">יש לך שאריות מתאימות במלאי</b>
+        <div class="meta">מסמנים חתיכה כדי לחתוך אותה משארית (גדולה ב־${REM_MARGIN} ס״מ לפחות מכל צד). היא יוצאת מהסידור על הלוחות ומקבלת קובץ משלה. לוודא שהשארית מאותו חומר ועובי.</div>
+        ${hits.map(h=>`<label style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:13px;color:var(--ink)">
+          <input type="checkbox" style="width:auto" ${SKETCH.useRem&&SKETCH.useRem[h.key]?"checked":""} onchange="SKETCH.useRem=SKETCH.useRem||{};SKETCH.useRem['${h.key}']=this.checked">
+          ${bEsc(h.p.label||"חתיכה")} ${h.p.len}×${h.p.depth} ← שארית ${bEsc(remName(h.m.row))}${h.m.rot?" בסיבוב":""}</label>`).join("")}</div>`:"";})()}
     <div style="margin-top:16px;font-weight:700">חתיכות המטבח</div>
     ${K.map((p,i)=>skRow(K,i,"kitchen")).join("")}
     <span onclick="SKETCH.kitchen.push({label:'חתיכה',len:null,depth:null,openings:[]});renderSketchTable()" style="cursor:pointer;color:var(--amber);font-size:13px">+ הוסף חתיכה</span>
@@ -1348,7 +1414,9 @@ async function basketRun(){
     o.innerHTML=`<div class="info" style="margin-top:12px"><b>${j.pieces} חתיכות על ${sl(j.slabs)}</b><br>
       ${saved>0?`כל עבודה לבד הייתה צריכה ביחד ${sl(apart)}. החיתוך המשותף חוסך ${sl(saved)}.`
         :`כל עבודה לבד הייתה צריכה ביחד ${sl(apart)}, כך שהחיתוך המשותף לא חוסך לוח שלם הפעם.`}
-      ${checkHtml(j.check)}
+      ${saved>0?(slabPrice(b[0].mat)?`<br><b>החיסכון שווה ${shekel(saved*slabPrice(b[0].mat))}</b> (${sl(saved)} × ${shekel(slabPrice(b[0].mat))}).`
+        :`<br><span class="meta">כדי לראות כמה כסף זה שווה, רושמים מחיר לוח ${MATERIALS[b[0].mat].he} במסך החומר.</span>`):""}
+      ${checkHtml(j.check,b[0].mat)}
       <div class="row" style="margin-top:10px">
         <button class="btn" style="flex:2" onclick="dlB64('shared_plan.pdf',LAST_FILES.pdf,'application/pdf')">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="bdxf">הורד DXF ↓</button></div>
@@ -1361,7 +1429,7 @@ async function generateFromSketch(){
   const cbx=sketchCombos();
   const C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
   const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
-  if(cbx&&cbx.length){ // יש קומבינציות → מציגים את כולן ובוחרים
+  if(cbx&&cbx.length&&!remChosen().length){ // יש קומבינציות → מציגים את כולן ובוחרים. עם חיתוך משאריות: רק החלוקה שנבחרה
     c.innerHTML='<div class="combo"><h3>מחשב את כל הקומבינציות…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
     try{
       const res=await fetch(ENGINE+"/api/combos",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -1405,9 +1473,13 @@ async function generateSimple(){
   const cb=sketchCombos();
   let K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
   if(cb&&SKETCH.combo>=0&&cb[SKETCH.combo])K=cb[SKETCH.combo].pieces;
-  const C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
-  if(!K.length&&!C.length){alert("נא להשלים לפחות חתיכה אחת עם אורך ועומק");return;}
+  let C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
+  const rem=remChosen(),remK=new Set(rem.map(h=>h.kind+"/"+h.key.split(":")[0].slice(1)));
+  if(rem.length){K=K.filter((p,i)=>!remK.has("k/"+i));C=C.filter((p,i)=>!remK.has("c/"+i));}
+  if(!K.length&&!C.length&&!rem.length){alert("נא להשלים לפחות חתיכה אחת עם אורך ועומק");return;}
   const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
+  if(rem.length){const rb=document.createElement("div");out.appendChild(rb);remRun(rb);
+    if(!K.length&&!C.length){c.innerHTML='<div class="combo"><h3>כל החתיכות נחתכות משאריות</h3><div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>';return;}}
   c.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
   try{
     const res=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},
