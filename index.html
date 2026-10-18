@@ -1727,7 +1727,8 @@ async function photoPlan(){
     o.innerHTML=`<div class="info" style="margin-top:12px"><b>התוכנית לפי הסידור שלך מוכנה</b>${checkHtml(j.check)}
       <div class="row" style="margin-top:10px">
         <button class="btn" style="flex:2" onclick="dlB64('cutting_plan_photo.pdf',PH.res.pdf,'application/pdf')">הורד תוכנית חיתוך (PDF) ↓</button>
-        <button class="btn ghost" style="flex:1" onclick="if(dxfGuard(PH.res.check)){download('cut_photo_'+PH.mat+'.dxf',PH.res.dxf);prodLog(PH.res.check,PH.payload.job_name||'',PH.res.dxf,PH.mat);}">הורד DXF ↓</button></div></div>`;
+        <button class="btn ghost" style="flex:1" onclick="if(dxfGuard(PH.res.check)){download('cut_photo_'+PH.mat+'.dxf',PH.res.dxf);prodLog(PH.res.check,PH.payload.job_name||'',PH.res.dxf,PH.mat);}">הורד DXF ↓</button></div>
+      <div class="row" style="margin-top:8px"><button class="btn" style="flex:1" onclick="sendToMachine(this,PH.res.dxf,PH.res.check,PH.payload.job_name||'',PH.mat)">📤 שלח למכונה</button></div>${machineHint()}</div>`;
   }catch(e){o.innerHTML='<div class="man" style="margin-top:10px">'+e.message+'</div>';}
 }
 </script></body></html>
