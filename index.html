@@ -219,6 +219,7 @@ async function engineResult(container,payload,isProdim,file){
         <button class="btn" style="flex:2" id="epdf">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="edxf">הורד DXF למכונה ↓</button>
       </div>
+      <div class="row" style="margin-top:8px">${machineBtn("emach")}</div>${machineHint()}
       <div class="row" style="margin-top:8px">
         <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button>
         <button class="btn ghost" style="flex:1" onclick="invExport()">📊 ייצוא מלאי לאקסל</button>
@@ -227,7 +228,9 @@ async function engineResult(container,payload,isProdim,file){
       <div id="invBox"></div><div id="shareBox"></div></div>`;
     LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("epdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
-    document.getElementById("edxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,isProdim&&file?file.name.replace(/\.dxf$/i,""):((payload&&payload.job_name)||""),j.dxf);}};
+    const ejob=isProdim&&file?file.name.replace(/\.dxf$/i,""):((payload&&payload.job_name)||"");
+    document.getElementById("edxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,ejob,j.dxf);}};
+    document.getElementById("emach").onclick=e=>sendToMachine(e.currentTarget,j.dxf,j.check,ejob,MAT);
     container.scrollIntoView({behavior:"smooth"});
   }catch(e){container.innerHTML=`<div class="combo"><h3>שגיאה ביצירת התוכנית</h3><div class="man">${e.message}. נסה שוב בעוד רגע.</div></div>`;}
 }
@@ -457,6 +460,67 @@ function fallbackDL(blob,name){
   a.href=u;a.download=name;a.rel="noopener";
   document.body.appendChild(a);a.click();
   setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(u);},1500);
+}
+/* ===== שליחה למכונה: הקובץ נשמר בתיקייה ToMachine בגוגל דרייב, והסקריפט במחשב המכונה מעביר אותו לבד לתיקיית החיתוכים ===== */
+const GDRIVE_CLIENT_ID="";   // מזהה החיבור של האתר לגוגל. כל עוד ריק, השליחה עוברת דרך חלון השיתוף של הטלפון
+const MACHINE_DIR="ToMachine", MACHINE_KEY="stoneai_machine_v1";
+let DRIVE_TOKEN=null;
+function loadGsi(){return new Promise((ok,no)=>{if(window.google&&google.accounts&&google.accounts.oauth2)return ok();
+  const s=document.createElement("script");s.src="https://accounts.google.com/gsi/client";s.onload=()=>ok();s.onerror=()=>no(new Error("לא הצלחתי להתחבר לגוגל"));document.head.appendChild(s);});}
+if(GDRIVE_CLIENT_ID)loadGsi().catch(()=>{});   // נטען מראש, כדי שחלון ההתחברות ייפתח מיד בלחיצה
+function driveToken(){
+  if(DRIVE_TOKEN&&DRIVE_TOKEN.exp>Date.now())return Promise.resolve(DRIVE_TOKEN.t);
+  return loadGsi().then(()=>new Promise((ok,no)=>{
+    const c=google.accounts.oauth2.initTokenClient({client_id:GDRIVE_CLIENT_ID,scope:"https://www.googleapis.com/auth/drive.file",
+      callback:r=>{if(r.error)return no(new Error(r.error));DRIVE_TOKEN={t:r.access_token,exp:Date.now()+((+r.expires_in||3600)-60)*1000};ok(r.access_token);},
+      error_callback:e=>no(new Error(e&&e.type==="popup_closed"?"cancel":"ההתחברות לגוגל לא הושלמה"))});
+    c.requestAccessToken({prompt:""});}));
+}
+async function driveFolder(t){
+  const H={Authorization:"Bearer "+t},api="https://www.googleapis.com/drive/v3/files";
+  let id="";try{id=localStorage.getItem(MACHINE_KEY)||"";}catch(e){}
+  if(id){const r=await fetch(api+"/"+id+"?fields=id,trashed",{headers:H});if(r.ok&&!(await r.json()).trashed)return id;}
+  // האתר רואה רק תיקיות שהוא עצמו יצר, ולכן בפעם הראשונה הוא יוצר את ToMachine בדרייב הראשי
+  const q=encodeURIComponent("name='"+MACHINE_DIR+"' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false");
+  let j=await (await fetch(api+"?q="+q+"&fields=files(id)",{headers:H})).json();
+  id=j.files&&j.files.length?j.files[0].id:"";
+  if(!id){j=await (await fetch(api+"?fields=id",{method:"POST",headers:{...H,"Content-Type":"application/json"},
+    body:JSON.stringify({name:MACHINE_DIR,mimeType:"application/vnd.google-apps.folder"})})).json();id=j.id||"";}
+  if(!id)throw new Error("לא הצלחתי למצוא או ליצור את התיקייה "+MACHINE_DIR);
+  try{localStorage.setItem(MACHINE_KEY,id);}catch(e){}
+  return id;
+}
+async function driveUpload(name,text){
+  const t=await driveToken(),folder=await driveFolder(t),b="stoneai"+Date.now();
+  const body="--"+b+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+JSON.stringify({name,parents:[folder]})+
+    "\r\n--"+b+"\r\nContent-Type: application/octet-stream\r\n\r\n"+text+"\r\n--"+b+"--";
+  const r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+    {method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"multipart/related; boundary="+b},body});
+  if(!r.ok){if(r.status===401)DRIVE_TOKEN=null;throw new Error("גוגל דרייב החזיר שגיאה "+r.status);}
+}
+/* שם קובץ באותיות לועזיות בלבד, כדי שהמכונה תציג אותו בלי תקלות שפה. התאריך והשעה מזהים את העבודה בדוח הייצור */
+function machineName(mat){const d=new Date(),p=n=>String(n).padStart(2,"0");
+  return "job_"+String(d.getFullYear()).slice(2)+p(d.getMonth()+1)+p(d.getDate())+"_"+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+"_"+(mat||MAT)+".dxf";}
+function machineBtn(id){return `<button class="btn" style="flex:1" id="${id}">📤 שלח למכונה</button>`;}
+function machineHint(){return GDRIVE_CLIENT_ID?"":`<div class="note">בחלון שנפתח בוחרים "שמירה בקבצים", אחר כך גוגל דרייב והתיקייה ${MACHINE_DIR}. מחשב המכונה מעביר את הקובץ לתיקיית החיתוכים תוך דקה או שתיים.</div>`;}
+async function sendToMachine(btn,dxf,check,job,mat){
+  if(!dxf){alert("אין עדיין קובץ למכונה.");return;}
+  if(!dxfGuard(check))return;
+  const name=machineName(mat),done=msg=>{prodLog(check,job,dxf,mat);if(btn){btn.textContent="✓ נשלח למכונה";btn.insertAdjacentHTML("afterend",
+    `<div class="chk ok" style="flex-basis:100%">${msg} שם הקובץ במכונה: ${name}</div>`);}},
+    soon="הקובץ יופיע במסך \"חתכים מתוך CAD\" תוך דקה או שתיים.";
+  if(GDRIVE_CLIENT_ID){
+    const old=btn?btn.textContent:"";if(btn)btn.textContent="שולח…";
+    try{await driveUpload(name,dxf);done("נשמר בתיקייה "+MACHINE_DIR+". "+soon);return;}
+    catch(e){if(btn)btn.textContent=old;if(e.message==="cancel")return;
+      alert(e.message+". אפשר לנסות שוב, או להוריד את הקובץ ולשמור אותו בתיקייה "+MACHINE_DIR+" ידנית.");return;}
+  }
+  const file=new File([dxf],name,{type:"application/dxf"});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file]});done("אם נשמר בתיקייה "+MACHINE_DIR+", "+soon);}catch(e){if(e&&e.name!=="AbortError")alert("השיתוף לא הצליח: "+e.message);}
+    return;
+  }
+  fallbackDL(new Blob([dxf],{type:"application/dxf"}),name);done("הקובץ ירד למחשב הזה. כדי שיגיע למכונה, שומרים אותו בתיקייה "+MACHINE_DIR+".");
 }
 function num(id){const v=parseFloat(document.getElementById(id).value);return isNaN(v)?null:v;}
 /* ---- render results ---- */
@@ -1420,9 +1484,12 @@ async function basketRun(){
       <div class="row" style="margin-top:10px">
         <button class="btn" style="flex:2" onclick="dlB64('shared_plan.pdf',LAST_FILES.pdf,'application/pdf')">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="bdxf">הורד DXF ↓</button></div>
+      <div class="row" style="margin-top:8px">${machineBtn("bmach")}</div>${machineHint()}
       <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button></div>
       <div id="invBox"></div></div>`;
-    document.getElementById("bdxf").onclick=()=>{if(dxfGuard(j.check)){download("shared_"+b[0].mat+".dxf",j.dxf);prodLog(j.check,"חיתוך משותף: "+b.map(x=>x.job).join(", "),j.dxf,b[0].mat);}};
+    const bjob="חיתוך משותף: "+b.map(x=>x.job).join(", ");
+    document.getElementById("bdxf").onclick=()=>{if(dxfGuard(j.check)){download("shared_"+b[0].mat+".dxf",j.dxf);prodLog(j.check,bjob,j.dxf,b[0].mat);}};
+    document.getElementById("bmach").onclick=e=>sendToMachine(e.currentTarget,j.dxf,j.check,bjob,b[0].mat);
   }catch(e){o.innerHTML='<div class="man" style="margin-top:10px">'+e.message+'</div>';}
 }
 async function generateFromSketch(){
@@ -1447,7 +1514,8 @@ async function generateFromSketch(){
           <div class="meta">${x.note||""} · ${x.pieces} חתיכות · ${x.slabs} לוחות · ${x.remnants.length} שאריות${x.check&&x.check.usage?" · ניצול "+x.check.usage.used_pct+"%":""}${x.check&&x.check.errors&&x.check.errors.length?' · <span style="color:#b42318;font-weight:700">'+x.check.errors.length+' בעיות</span>':""}</div>
           <div class="row" style="margin-top:8px">
             <button class="btn" style="flex:2" onclick="pickCombo(${i})">בחר וקבל DXF ↓</button>
-          </div></div>`).join("")}
+            <button class="btn ghost" style="flex:1" onclick="sendToMachine(this,COMBO_RESULTS[${i}].dxf,COMBO_RESULTS[${i}].check,SKETCH.job||'',MAT)">📤 שלח למכונה</button>
+          </div></div>`).join("")}${machineHint()}
         <div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div>
         <div id="invBox"></div><div id="shareBox"></div></div>`;
       COMBO_RESULTS=j.combos;
@@ -1493,6 +1561,7 @@ async function generateSimple(){
         <button class="btn" style="flex:2" id="spdf">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="sdxf">הורד DXF למכונה ↓</button>
       </div>
+      <div class="row" style="margin-top:8px">${machineBtn("smach")}</div>${machineHint()}
       <div class="row" style="margin-top:8px">
         <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button>
         <button class="btn ghost" style="flex:1" onclick="invExport()">📊 ייצוא מלאי לאקסל</button>
@@ -1503,6 +1572,7 @@ async function generateSimple(){
     LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("spdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
     document.getElementById("sdxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,SKETCH.job||"",j.dxf);}};
+    document.getElementById("smach").onclick=e=>sendToMachine(e.currentTarget,j.dxf,j.check,SKETCH.job||"",MAT);
   }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
 }
 </script></body></html>
