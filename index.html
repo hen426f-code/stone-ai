@@ -85,6 +85,7 @@ input,select,textarea{background:#fff!important;border:1.5px solid var(--line)!i
     </div>
     <div style="margin-top:12px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderProdReport()">📊 דוח ייצור: מה נחתך החודש</span></div>
     <div style="margin-top:8px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderJobs()">📋 לוח עבודות: מהמדידה ועד ההתקנה</span></div>
+    <div style="margin-top:8px;font-size:14px"><span style="cursor:pointer;color:var(--amber)" onclick="renderProfile()">🏭 פרופיל המפעל: הכללים וההגדרות שלך, וגיבוי שלהם לקובץ</span></div>
   </div>
 </div>
 
@@ -1577,6 +1578,82 @@ async function generateSimple(){
     document.getElementById("sdxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,SKETCH.job||"",j.dxf);}};
     document.getElementById("smach").onclick=e=>sendToMachine(e.currentTarget,j.dxf,j.check,SKETCH.job||"",MAT);
   }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
+}
+
+/* ===== פרופיל מפעל: הכללים של המפעל במקום אחד, ושמירה שלהם לקובץ כדי להעביר לטלפון או למחשב אחר =====
+   ההגדרות עצמן נשמרות במפתחות הקיימים. כאן רק מרכזים, מוסיפים את כללי המכונה, ומייצאים */
+const PROFILE_KEY="stoneai_profile_v1";
+const PROFILE_KEYS=["stoneai_profile_v1","stoneai_slabs_v1","stoneai_slabprice_v1","stoneai_prices_v1","stoneai_logo_v1","stoneai_saw_v1","stoneai_chatlang_v1","stoneai_voice_v1","stoneai_machine_v1"];
+const DATA_KEYS=["stoneai_jobs_v1","stoneai_remnants_v1","stoneai_remnants_v1_no","stoneai_prodlog_v1","stoneai_basket_v1"];
+const PROFILE_FIELDS=[
+  ["name","שם המפעל","text",""],
+  ["ext_mm","אורך הארכת חיתוך","number","מ״מ"],
+  ["vac_mm","מרחק הזזת ואקום","number","מ״מ"],
+  ["note","כללים נוספים של המפעל","text",""]];
+function profLoad(){try{return JSON.parse(localStorage.getItem(PROFILE_KEY)||"{}");}catch(e){return {};}}
+function profSave(){
+  const o=profLoad();
+  PROFILE_FIELDS.forEach(([k,,t])=>{const v=(document.getElementById("pf_"+k).value||"").trim();
+    if(v==="")delete o[k];else o[k]=t==="number"?+v:v;});
+  if(o.ext_mm!=null&&!(o.ext_mm>=0&&o.ext_mm<=500)){alert("אורך ההארכה צריך להיות בין 0 ל־500 מ״מ.");return;}
+  if(o.vac_mm!=null&&!(o.vac_mm>=0&&o.vac_mm<=1000)){alert("מרחק הוואקום צריך להיות בין 0 ל־1000 מ״מ.");return;}
+  try{localStorage.setItem(PROFILE_KEY,JSON.stringify(o));}catch(e){alert("לא הצלחתי לשמור במכשיר");return;}
+  renderProfile("נשמר ✓");
+}
+function profJson(k){try{return JSON.parse(localStorage.getItem(k)||"null");}catch(e){return null;}}
+function renderProfile(msg){
+  const out=document.getElementById("out"),o=profLoad();
+  const sl=profJson("stoneai_slabs_v1")||{},sp=profJson("stoneai_slabprice_v1")||{},pr=profJson("stoneai_prices_v1")||{};
+  const nPr=Object.values(pr).filter(v=>+v>0).length;
+  let logo="";try{logo=localStorage.getItem("stoneai_logo_v1")||"";}catch(e){}
+  const matLine=k=>{const m=MATERIALS[k],own=sl[k];
+    return `<div style="padding:6px 0;border-bottom:1px solid var(--line);font-size:13.5px">${m.he}: לוח <span dir="ltr">${m.slabL}×${m.slabW}</span>${own?"":" (ברירת מחדל)"} · עובי ${m.depth} מ״מ${+sp[k]>0?" · מחיר לוח ₪"+(+sp[k]).toLocaleString("he-IL"):""}</div>`;};
+  out.innerHTML=`<div class="combo"><span class="back" onclick="home()">→ חזרה</span>
+    <h3>פרופיל המפעל</h3>
+    <div class="meta">מגדירים פעם אחת, וכל עבודה נעשית לפי הכללים של המפעל. כל ההגדרות נשמרות במכשיר הזה, ולכן כדאי לשמור אותן גם לקובץ.</div>
+    ${msg?`<div class="chk ok">${msg}</div>`:""}
+    <div style="margin-top:14px;font-weight:700">כללי המכונה והמפעל</div>
+    ${PROFILE_FIELDS.map(([k,l,t,u])=>`<label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13.5px;color:var(--ink)">
+      <span style="flex:1">${l}${u?" ("+u+")":""}</span>
+      <input id="pf_${k}" type="${t}" ${t==="number"?'min="0" style="width:110px"':'style="flex:2"'} value="${jEsc(o[k]??"")}"></label>`).join("")}
+    <div class="note">אורך ההארכה ומרחק הוואקום נשמרים כבר עכשיו, וישמשו את קובץ העבודה המוכן למכונה ברגע שהפענוח שלו יושלם. אין ערך מוכן מראש: רושמים את מה שנהוג אצלך.</div>
+    <div class="row" style="margin-top:10px"><button class="btn" style="flex:1" onclick="profSave()">שמירת הכללים</button></div>
+    <div style="margin-top:18px;font-weight:700">חומרים ולוחות</div>
+    ${Object.keys(MATERIALS).map(matLine).join("")}
+    <div class="note">מידות הלוח ומחיר הלוח נקבעים במסך בחירת החומר, בתחילת כל עבודה.</div>
+    <div style="margin-top:18px;font-weight:700">מחירון והצעת מחיר</div>
+    <div style="font-size:13.5px;margin-top:4px">${nPr?nPr+" מחירים מוגדרים במחירון":"המחירון עוד ריק"} · ${logo?"יש לוגו להצעה":"אין לוגו להצעה"}</div>
+    <div class="note">המחירון והלוגו נקבעים בכפתור "הצעת מחיר ללקוח" שבטבלת המידות.</div>
+    <div style="margin-top:18px;font-weight:700">גיבוי והעברה למכשיר אחר</div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost" style="flex:1" onclick="profExport(false)">שמור את ההגדרות לקובץ</button>
+      <button class="btn ghost" style="flex:1" onclick="profExport(true)">שמור הגדרות וכל הנתונים</button></div>
+    <label class="btn ghost" style="display:block;text-align:center;margin-top:8px">טעינה מקובץ שנשמר
+      <input type="file" accept=".json,application/json" style="display:none" onchange="profImport(this)"></label>
+    <div class="note">"כל הנתונים" כולל גם את לוח העבודות, מלאי השאריות ודוח הייצור. בטעינה, כל מה שבקובץ מחליף את מה שיש במכשיר הזה.</div>
+  </div>`;
+  out.scrollIntoView({behavior:"smooth"});
+}
+function profExport(all){
+  const keys=all?PROFILE_KEYS.concat(DATA_KEYS):PROFILE_KEYS,data={};
+  keys.forEach(k=>{try{const v=localStorage.getItem(k);if(v!=null)data[k]=v;}catch(e){}});
+  const nm=(profLoad().name||"").trim(),d=jToday();
+  const file={app:"stone-ai",kind:all?"full":"profile",saved:d,factory:nm,data};
+  saveFile((all?"stoneai_backup_":"stoneai_profile_")+d+".json",new Blob([JSON.stringify(file)],{type:"application/json"}));
+}
+function profImport(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    let j;try{j=JSON.parse(rd.result);}catch(e){alert("הקובץ לא נקרא. צריך לבחור קובץ שנשמר מהמסך הזה.");return;}
+    if(!j||j.app!=="stone-ai"||typeof j.data!=="object"){alert("זה לא קובץ פרופיל של המערכת.");return;}
+    const ok=PROFILE_KEYS.concat(DATA_KEYS),keys=Object.keys(j.data).filter(k=>ok.includes(k)&&typeof j.data[k]==="string");
+    if(!keys.length){alert("אין בקובץ הגדרות לטעון.");return;}
+    if(!confirm("לטעון "+(j.kind==="full"?"את ההגדרות ואת כל הנתונים":"את ההגדרות")+(j.factory?" של "+j.factory:"")+" מתאריך "+(j.saved||"לא ידוע")+"? מה שבקובץ יחליף את מה שיש במכשיר הזה."))return;
+    try{keys.forEach(k=>localStorage.setItem(k,j.data[k]));}catch(e){alert("לא הצלחתי לשמור במכשיר: "+e.message);return;}
+    slabApply();renderProfile("נטענו "+keys.length+" הגדרות ונתונים מהקובץ ✓");
+  };
+  rd.readAsText(f);
 }
 
 /* ===== צילום הלוח האמיתי: מיישרים את התמונה לפי ארבע הפינות, מניחים עליה את החתיכות, ומזיזים כדי לתפוס עורק יפה או להתחמק מסדק ===== */
