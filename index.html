@@ -168,6 +168,12 @@ function slabSet(k,L,W){const o=slabLoad();
   try{localStorage.setItem(SLAB_KEY,JSON.stringify(o));}catch(e){}
   slabApply();renderMats();}
 const slabQ=()=>({slabL:MATERIALS[MAT].slabL,slabW:MATERIALS[MAT].slabW});
+/* מחיר לוח שלם לכל חומר, כפי שהמפעל קונה. בלי מחיר לא מוצג שווי בכסף, ושום מחיר לא מנוחש */
+const SLABPRICE_KEY="stoneai_slabprice_v1";
+function slabPrice(k){try{const v=+JSON.parse(localStorage.getItem(SLABPRICE_KEY)||"{}")[k||MAT];return v>0?v:0;}catch(e){return 0;}}
+function slabPriceSet(k,v){let o={};try{o=JSON.parse(localStorage.getItem(SLABPRICE_KEY)||"{}");}catch(e){}
+  v=+v;if(v>0)o[k]=v;else delete o[k];try{localStorage.setItem(SLABPRICE_KEY,JSON.stringify(o));}catch(e){}renderMats();}
+const shekel=v=>"₪"+Math.round(v).toLocaleString("he-IL");
 const KERF=0.6,PRIO_ACI=[1,2,3,4,5,6,7,8,9,9],OPENING_ACI=9;
 const ACICOL={1:"#e6194b",2:"#f58231",3:"#3cb44b",4:"#42d4f4",5:"#4363d8",6:"#a24bd6",7:"#9a9a3a",8:"#00a0a0",9:"#e6194b"};
 let MAT="porcelan", MODE=null, PRODIM_PIECES=null;
@@ -180,13 +186,16 @@ warmEngine();setInterval(()=>{if(!document.hidden)warmEngine();},10*60*1000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)warmEngine();});
 function dlB64(name,b64,mime){const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);saveFile(name,new Blob([arr],{type:mime}));}
 /* בודק לפני חיתוך: בעיות ודאיות באדום, דברים לבדיקה בצהוב, וניצול הלוחות */
-function checkHtml(ch){
+function checkHtml(ch,mat,noMoney){
   if(!ch)return "";
+  mat=mat||MAT;
   const u=ch.usage||{};let h="";
   if(ch.errors&&ch.errors.length)h+='<div class="chk bad"><b>לפני חיתוך: '+ch.errors.length+' בעיות שחייבים לתקן</b><br>'+ch.errors.map(e=>"• "+e).join("<br>")+'</div>';
   if(ch.warnings&&ch.warnings.length)h+='<div class="chk"><b>לבדיקה</b><br>'+ch.warnings.map(w=>"• "+w).join("<br>")+'</div>';
   if(!h)h='<div class="chk ok">✓ הבדיקה לפני חיתוך עברה: החתיכות נכנסות בלוחות, והפתחים בתוך החתיכות בלי חפיפה.</div>';
   if(u.slabs)h+='<div class="note">ניצול הלוחות: '+u.used_pct+'% · '+u.pieces_m2+' מ״ר חתיכות מתוך '+u.slabs_m2+' מ״ר לוחות · '+u.waste_m2+' מ״ר לא נוצלו (חלקם שאריות למלאי)</div>';
+  const pr=slabPrice(mat);
+  if(u.slabs&&pr&&!noMoney)h+='<div class="note">בכסף: '+(u.slabs===1?'לוח אחד':u.slabs+' לוחות')+' × '+shekel(pr)+' = <b>'+shekel(u.slabs*pr)+'</b> · השטח שלא נוצל שווה כ־'+shekel(pr*u.waste_m2/(u.slabs_m2/u.slabs))+'</div>';
   return h;
 }
 function dxfGuard(ch){
@@ -211,6 +220,7 @@ async function engineResult(container,payload,isProdim,file){
         <button class="btn" style="flex:2" id="epdf">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="edxf">הורד DXF למכונה ↓</button>
       </div>
+      <div class="row" style="margin-top:8px">${machineBtn("emach")}</div>${machineHint()}
       <div class="row" style="margin-top:8px">
         <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button>
         <button class="btn ghost" style="flex:1" onclick="invExport()">📊 ייצוא מלאי לאקסל</button>
@@ -219,7 +229,9 @@ async function engineResult(container,payload,isProdim,file){
       <div id="invBox"></div><div id="shareBox"></div></div>`;
     LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("epdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
-    document.getElementById("edxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,isProdim&&file?file.name.replace(/\.dxf$/i,""):((payload&&payload.job_name)||""),j.dxf);}};
+    const ejob=isProdim&&file?file.name.replace(/\.dxf$/i,""):((payload&&payload.job_name)||"");
+    document.getElementById("edxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,ejob,j.dxf);}};
+    document.getElementById("emach").onclick=e=>sendToMachine(e.currentTarget,j.dxf,j.check,ejob,MAT);
     container.scrollIntoView({behavior:"smooth"});
   }catch(e){container.innerHTML=`<div class="combo"><h3>שגיאה ביצירת התוכנית</h3><div class="man">${e.message}. נסה שוב בעוד רגע.</div></div>`;}
 }
@@ -450,6 +462,67 @@ function fallbackDL(blob,name){
   document.body.appendChild(a);a.click();
   setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(u);},1500);
 }
+/* ===== שליחה למכונה: הקובץ נשמר בתיקייה ToMachine בגוגל דרייב, והסקריפט במחשב המכונה מעביר אותו לבד לתיקיית החיתוכים ===== */
+const GDRIVE_CLIENT_ID="";   // מזהה החיבור של האתר לגוגל. כל עוד ריק, השליחה עוברת דרך חלון השיתוף של הטלפון
+const MACHINE_DIR="ToMachine", MACHINE_KEY="stoneai_machine_v1";
+let DRIVE_TOKEN=null;
+function loadGsi(){return new Promise((ok,no)=>{if(window.google&&google.accounts&&google.accounts.oauth2)return ok();
+  const s=document.createElement("script");s.src="https://accounts.google.com/gsi/client";s.onload=()=>ok();s.onerror=()=>no(new Error("לא הצלחתי להתחבר לגוגל"));document.head.appendChild(s);});}
+if(GDRIVE_CLIENT_ID)loadGsi().catch(()=>{});   // נטען מראש, כדי שחלון ההתחברות ייפתח מיד בלחיצה
+function driveToken(){
+  if(DRIVE_TOKEN&&DRIVE_TOKEN.exp>Date.now())return Promise.resolve(DRIVE_TOKEN.t);
+  return loadGsi().then(()=>new Promise((ok,no)=>{
+    const c=google.accounts.oauth2.initTokenClient({client_id:GDRIVE_CLIENT_ID,scope:"https://www.googleapis.com/auth/drive.file",
+      callback:r=>{if(r.error)return no(new Error(r.error));DRIVE_TOKEN={t:r.access_token,exp:Date.now()+((+r.expires_in||3600)-60)*1000};ok(r.access_token);},
+      error_callback:e=>no(new Error(e&&e.type==="popup_closed"?"cancel":"ההתחברות לגוגל לא הושלמה"))});
+    c.requestAccessToken({prompt:""});}));
+}
+async function driveFolder(t){
+  const H={Authorization:"Bearer "+t},api="https://www.googleapis.com/drive/v3/files";
+  let id="";try{id=localStorage.getItem(MACHINE_KEY)||"";}catch(e){}
+  if(id){const r=await fetch(api+"/"+id+"?fields=id,trashed",{headers:H});if(r.ok&&!(await r.json()).trashed)return id;}
+  // האתר רואה רק תיקיות שהוא עצמו יצר, ולכן בפעם הראשונה הוא יוצר את ToMachine בדרייב הראשי
+  const q=encodeURIComponent("name='"+MACHINE_DIR+"' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false");
+  let j=await (await fetch(api+"?q="+q+"&fields=files(id)",{headers:H})).json();
+  id=j.files&&j.files.length?j.files[0].id:"";
+  if(!id){j=await (await fetch(api+"?fields=id",{method:"POST",headers:{...H,"Content-Type":"application/json"},
+    body:JSON.stringify({name:MACHINE_DIR,mimeType:"application/vnd.google-apps.folder"})})).json();id=j.id||"";}
+  if(!id)throw new Error("לא הצלחתי למצוא או ליצור את התיקייה "+MACHINE_DIR);
+  try{localStorage.setItem(MACHINE_KEY,id);}catch(e){}
+  return id;
+}
+async function driveUpload(name,text){
+  const t=await driveToken(),folder=await driveFolder(t),b="stoneai"+Date.now();
+  const body="--"+b+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+JSON.stringify({name,parents:[folder]})+
+    "\r\n--"+b+"\r\nContent-Type: application/octet-stream\r\n\r\n"+text+"\r\n--"+b+"--";
+  const r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+    {method:"POST",headers:{Authorization:"Bearer "+t,"Content-Type":"multipart/related; boundary="+b},body});
+  if(!r.ok){if(r.status===401)DRIVE_TOKEN=null;throw new Error("גוגל דרייב החזיר שגיאה "+r.status);}
+}
+/* שם קובץ באותיות לועזיות בלבד, כדי שהמכונה תציג אותו בלי תקלות שפה. התאריך והשעה מזהים את העבודה בדוח הייצור */
+function machineName(mat){const d=new Date(),p=n=>String(n).padStart(2,"0");
+  return "job_"+String(d.getFullYear()).slice(2)+p(d.getMonth()+1)+p(d.getDate())+"_"+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+"_"+(mat||MAT)+".dxf";}
+function machineBtn(id){return `<button class="btn" style="flex:1" id="${id}">📤 שלח למכונה</button>`;}
+function machineHint(){return GDRIVE_CLIENT_ID?"":`<div class="note">בחלון שנפתח בוחרים "שמירה בקבצים", אחר כך גוגל דרייב והתיקייה ${MACHINE_DIR}. מחשב המכונה מעביר את הקובץ לתיקיית החיתוכים תוך דקה או שתיים.</div>`;}
+async function sendToMachine(btn,dxf,check,job,mat){
+  if(!dxf){alert("אין עדיין קובץ למכונה.");return;}
+  if(!dxfGuard(check))return;
+  const name=machineName(mat),done=msg=>{prodLog(check,job,dxf,mat);if(btn){btn.textContent="✓ נשלח למכונה";btn.insertAdjacentHTML("afterend",
+    `<div class="chk ok" style="flex-basis:100%">${msg} שם הקובץ במכונה: ${name}</div>`);}},
+    soon="הקובץ יופיע במסך \"חתכים מתוך CAD\" תוך דקה או שתיים.";
+  if(GDRIVE_CLIENT_ID){
+    const old=btn?btn.textContent:"";if(btn)btn.textContent="שולח…";
+    try{await driveUpload(name,dxf);done("נשמר בתיקייה "+MACHINE_DIR+". "+soon);return;}
+    catch(e){if(btn)btn.textContent=old;if(e.message==="cancel")return;
+      alert(e.message+". אפשר לנסות שוב, או להוריד את הקובץ ולשמור אותו בתיקייה "+MACHINE_DIR+" ידנית.");return;}
+  }
+  const file=new File([dxf],name,{type:"application/dxf"});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file]});done("אם נשמר בתיקייה "+MACHINE_DIR+", "+soon);}catch(e){if(e&&e.name!=="AbortError")alert("השיתוף לא הצליח: "+e.message);}
+    return;
+  }
+  fallbackDL(new Blob([dxf],{type:"application/dxf"}),name);done("הקובץ ירד למחשב הזה. כדי שיגיע למכונה, שומרים אותו בתיקייה "+MACHINE_DIR+".");
+}
 function num(id){const v=parseFloat(document.getElementById(id).value);return isNaN(v)?null:v;}
 /* ---- render results ---- */
 function showResult(title,pieces){
@@ -590,7 +663,11 @@ function renderMats(){const m=document.getElementById("mats");m.innerHTML="";
   e.innerHTML=`<span>מידות הלוח שלך ל${v.he}:</span>
     <input type="number" value="${v.slabL}" style="width:70px" id="slabL"> × <input type="number" value="${v.slabW}" style="width:70px" id="slabW"> ס״מ
     <span style="cursor:pointer;color:var(--amber)" onclick="slabSet('${MAT}',document.getElementById('slabL').value,document.getElementById('slabW').value)">שמירה</span>
-    ${cust?`<span style="cursor:pointer;color:var(--muted,#888)" onclick="slabSet('${MAT}',null)">חזרה ל־${SLAB_DEF[MAT].slabL}×${SLAB_DEF[MAT].slabW}</span>`:""}`;
+    ${cust?`<span style="cursor:pointer;color:var(--muted,#888)" onclick="slabSet('${MAT}',null)">חזרה ל־${SLAB_DEF[MAT].slabL}×${SLAB_DEF[MAT].slabW}</span>`:""}
+    <span style="flex-basis:100%;height:0"></span>
+    <span>מחיר לוח ${v.he} שלם:</span> <input type="number" min="0" value="${slabPrice(MAT)||""}" placeholder="₪" style="width:90px" id="slabPr">
+    <span style="cursor:pointer;color:var(--amber)" onclick="slabPriceSet('${MAT}',document.getElementById('slabPr').value)">שמירה</span>
+    <span class="meta" style="font-size:12px">כדי לראות כמה כסף החיסכון שווה</span>`;
   m.appendChild(e);}
 function hideAll(){["start","matcard","prodim","upload","manual"].forEach(id=>document.getElementById(id).classList.add("hidden"));document.getElementById("out").innerHTML="";}
 function home(){hideAll();document.getElementById("start").classList.remove("hidden");}
@@ -1067,18 +1144,69 @@ function drawLive(){const el=document.getElementById("liveSVG");if(el)el.innerHT
 
 /* ===== התאמת שאריות מהמלאי (חייב להיות גדול ב-2 ס"מ לפחות בשני הצדדים) ===== */
 const REM_MARGIN=2;
-function remnantFor(piece){
+function remnantFor(piece,skip){
   if(!piece||!piece.len||!piece.depth)return null;
   const need_l=piece.len+REM_MARGIN, need_d=piece.depth+REM_MARGIN;
   const rows=invLoad(); let best=null;
-  rows.forEach(r=>{
+  rows.forEach((r,idx)=>{
+    if(skip&&skip.has(idx))return;
     const L=parseFloat(r.len), D=parseFloat(r.depth); if(!L||!D)return;
     const fits=(L>=need_l&&D>=need_d), fitsRot=(L>=need_d&&D>=need_l);
     if(!fits&&!fitsRot)return;
     const waste=(L*D)-(piece.len*piece.depth);
-    if(!best||waste<best.waste)best={row:r,waste,rot:(!fits&&fitsRot)};
+    if(!best||waste<best.waste)best={row:r,idx,waste,rot:(!fits&&fitsRot)};
   });
   return best;
+}
+/* חיתוך משארית: חתיכה שסומנה יוצאת מהסידור על הלוחות ומקבלת קובץ משלה בגודל השארית */
+function remPieces(){
+  const cbx=sketchCombos();
+  const K=(cbx&&SKETCH.combo>=0&&cbx[SKETCH.combo])?cbx[SKETCH.combo].pieces:SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
+  return {K,C:SKETCH.cladding.filter(p=>p.len>0&&p.depth>0)};
+}
+function remMatches(){   // לכל חתיכה השארית הכי חסכונית, בלי ששתי חתיכות יקבלו את אותה שארית
+  const {K,C}=remPieces(),taken=new Set(),out=[];
+  [["k",K],["c",C]].forEach(([kind,arr])=>arr.forEach((p,i)=>{
+    if((parseInt(p.qty)||1)>1)return;
+    const m=remnantFor(p,taken);if(!m)return;
+    taken.add(m.idx);out.push({key:kind+i+":"+p.len+"x"+p.depth,kind,p,m});
+  }));
+  return out;
+}
+const remChosen=()=>remMatches().filter(h=>SKETCH.useRem&&SKETCH.useRem[h.key]);
+const remName=r=>(r.no?"S"+r.no+" ":"")+r.len+"×"+r.depth+(r.material?" ("+r.material+")":"")+(r.shelf?" · מדף "+r.shelf:"");
+function invTake(row){   // השארית נחתכה: יוצאת מהמלאי
+  const rows=invLoad(),k=rows.findIndex(r=>row.id?r.id===row.id:JSON.stringify(r)===JSON.stringify(row));
+  if(k<0)return false;rows.splice(k,1);return invSave(rows);
+}
+async function remRun(box){
+  const hits=remChosen();if(!hits.length)return;
+  box.innerHTML='<div class="meta" style="margin-top:12px">מכין קובץ לכל חתיכה שנחתכת משארית…</div>';
+  const res=[];
+  for(const h of hits){
+    const L=Math.max(+h.m.row.len,+h.m.row.depth),W=Math.min(+h.m.row.len,+h.m.row.depth);
+    try{
+      const j=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({pieces:[{...h.p,edges:h.p.edges||{}}],material:MAT,slabL:L,slabW:W,remnant:true,job_name:SKETCH.job||""})}).then(r=>r.json());
+      if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
+      // מנוע ישן מתעלם ממידות השארית ומסדר על לוח שלם. קובץ כזה לא שולחים למכונה
+      if(+j.slabL!==L||+j.slabW!==W)throw new Error("המנוע עוד לא מעודכן לחיתוך משארית");
+      res.push({h,j});
+    }catch(e){res.push({h,err:e.message});}
+  }
+  REM_RESULTS=res;
+  box.innerHTML=`<div class="info" style="margin-top:12px"><b>חתיכות משאריות</b> · כל קובץ מסודר על השארית עצמה. מניחים את השארית בפינת האפס של המכונה.
+    ${res.map((x,i)=>`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
+      ${bEsc(x.h.p.label||"חתיכה")} ${x.h.p.len}×${x.h.p.depth} ← שארית ${bEsc(remName(x.h.m.row))}
+      ${x.err?`<div class="man">${bEsc(x.err)}</div>`:`${checkHtml(x.j.check,MAT,true)}
+      <div class="row" style="margin-top:6px"><button class="btn ghost" style="flex:1" onclick="remDxf(${i})">הורד DXF לשארית ↓</button></div>`}</div>`).join("")}</div>`;
+}
+let REM_RESULTS=[];
+function remDxf(i){
+  const x=REM_RESULTS[i];if(!x||!x.j||!dxfGuard(x.j.check))return;
+  download("remnant_"+(x.h.m.row.no?"S"+x.h.m.row.no:i+1)+"_"+MAT+".dxf",x.j.dxf);
+  prodLog(x.j.check,(SKETCH.job||"")+" · משארית",x.j.dxf);
+  if(confirm("להוציא את השארית "+remName(x.h.m.row)+" מהמלאי?"))invTake(x.h.m.row);
 }
 function remnantNote(pieces){
   const hits=[];
@@ -1129,11 +1257,13 @@ function renderSketchTable(){
         ${cb.map((c,i)=>`<div onclick="SKETCH.combo=${i};renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===i?"var(--amber)":"var(--line)"};background:${SKETCH.combo===i?"rgba(240,165,0,.12)":"transparent"};font-size:13px">${c.title}<br><span class="meta">${c.note}</span>${c.suspect?`<br><span style="color:#e0a03a;font-size:11px">⚠ ${c.suspect}</span>`:""}</div>`).join("")}
         <div onclick="SKETCH.combo=-1;renderSketchTable()" style="cursor:pointer;padding:8px 14px;border-radius:20px;border:1px solid ${SKETCH.combo===-1?"var(--amber)":"var(--line)"};font-size:13px">בלי פינה</div>
       </div></div>`:""}
-    ${(()=>{const cbx=sketchCombos();
-      const pcs=(cbx&&SKETCH.combo>=0&&cbx[SKETCH.combo])?cbx[SKETCH.combo].pieces:K.filter(p=>p.len>0&&p.depth>0);
-      const hits=remnantNote(pcs.concat(C.filter(p=>p.len>0&&p.depth>0)));
+    ${(()=>{const hits=remMatches();
       return hits.length?`<div style="margin-top:12px;padding:10px;border:1px solid #4aBE82;border-radius:10px;font-size:13px">
-        <b style="color:#4aBE82">יש לך שאריות מתאימות במלאי</b><br>${hits.map(h=>"• "+h).join("<br>")}</div>`:"";})()}
+        <b style="color:#4aBE82">יש לך שאריות מתאימות במלאי</b>
+        <div class="meta">מסמנים חתיכה כדי לחתוך אותה משארית (גדולה ב־${REM_MARGIN} ס״מ לפחות מכל צד). היא יוצאת מהסידור על הלוחות ומקבלת קובץ משלה. לוודא שהשארית מאותו חומר ועובי.</div>
+        ${hits.map(h=>`<label style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:13px;color:var(--ink)">
+          <input type="checkbox" style="width:auto" ${SKETCH.useRem&&SKETCH.useRem[h.key]?"checked":""} onchange="SKETCH.useRem=SKETCH.useRem||{};SKETCH.useRem['${h.key}']=this.checked">
+          ${bEsc(h.p.label||"חתיכה")} ${h.p.len}×${h.p.depth} ← שארית ${bEsc(remName(h.m.row))}${h.m.rot?" בסיבוב":""}</label>`).join("")}</div>`:"";})()}
     <div style="margin-top:16px;font-weight:700">חתיכות המטבח</div>
     ${K.map((p,i)=>skRow(K,i,"kitchen")).join("")}
     <span onclick="SKETCH.kitchen.push({label:'חתיכה',len:null,depth:null,openings:[]});renderSketchTable()" style="cursor:pointer;color:var(--amber);font-size:13px">+ הוסף חתיכה</span>
@@ -1349,20 +1479,25 @@ async function basketRun(){
     o.innerHTML=`<div class="info" style="margin-top:12px"><b>${j.pieces} חתיכות על ${sl(j.slabs)}</b><br>
       ${saved>0?`כל עבודה לבד הייתה צריכה ביחד ${sl(apart)}. החיתוך המשותף חוסך ${sl(saved)}.`
         :`כל עבודה לבד הייתה צריכה ביחד ${sl(apart)}, כך שהחיתוך המשותף לא חוסך לוח שלם הפעם.`}
-      ${checkHtml(j.check)}
+      ${saved>0?(slabPrice(b[0].mat)?`<br><b>החיסכון שווה ${shekel(saved*slabPrice(b[0].mat))}</b> (${sl(saved)} × ${shekel(slabPrice(b[0].mat))}).`
+        :`<br><span class="meta">כדי לראות כמה כסף זה שווה, רושמים מחיר לוח ${MATERIALS[b[0].mat].he} במסך החומר.</span>`):""}
+      ${checkHtml(j.check,b[0].mat)}
       <div class="row" style="margin-top:10px">
         <button class="btn" style="flex:2" onclick="dlB64('shared_plan.pdf',LAST_FILES.pdf,'application/pdf')">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="bdxf">הורד DXF ↓</button></div>
+      <div class="row" style="margin-top:8px">${machineBtn("bmach")}</div>${machineHint()}
       <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button></div>
       <div id="invBox"></div></div>`;
-    document.getElementById("bdxf").onclick=()=>{if(dxfGuard(j.check)){download("shared_"+b[0].mat+".dxf",j.dxf);prodLog(j.check,"חיתוך משותף: "+b.map(x=>x.job).join(", "),j.dxf,b[0].mat);}};
+    const bjob="חיתוך משותף: "+b.map(x=>x.job).join(", ");
+    document.getElementById("bdxf").onclick=()=>{if(dxfGuard(j.check)){download("shared_"+b[0].mat+".dxf",j.dxf);prodLog(j.check,bjob,j.dxf,b[0].mat);}};
+    document.getElementById("bmach").onclick=e=>sendToMachine(e.currentTarget,j.dxf,j.check,bjob,b[0].mat);
   }catch(e){o.innerHTML='<div class="man" style="margin-top:10px">'+e.message+'</div>';}
 }
 async function generateFromSketch(){
   const cbx=sketchCombos();
   const C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
   const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
-  if(cbx&&cbx.length){ // יש קומבינציות → מציגים את כולן ובוחרים
+  if(cbx&&cbx.length&&!remChosen().length){ // יש קומבינציות → מציגים את כולן ובוחרים. עם חיתוך משאריות: רק החלוקה שנבחרה
     c.innerHTML='<div class="combo"><h3>מחשב את כל הקומבינציות…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
     try{
       const res=await fetch(ENGINE+"/api/combos",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -1380,7 +1515,8 @@ async function generateFromSketch(){
           <div class="meta">${x.note||""} · ${x.pieces} חתיכות · ${x.slabs} לוחות · ${x.remnants.length} שאריות${x.check&&x.check.usage?" · ניצול "+x.check.usage.used_pct+"%":""}${x.check&&x.check.errors&&x.check.errors.length?' · <span style="color:#b42318;font-weight:700">'+x.check.errors.length+' בעיות</span>':""}</div>
           <div class="row" style="margin-top:8px">
             <button class="btn" style="flex:2" onclick="pickCombo(${i})">בחר וקבל DXF ↓</button>
-          </div></div>`).join("")}
+            <button class="btn ghost" style="flex:1" onclick="sendToMachine(this,COMBO_RESULTS[${i}].dxf,COMBO_RESULTS[${i}].check,SKETCH.job||'',MAT)">📤 שלח למכונה</button>
+          </div></div>`).join("")}${machineHint()}
         <div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div>
         <div id="invBox"></div><div id="shareBox"></div></div>`;
       COMBO_RESULTS=j.combos;
@@ -1406,14 +1542,19 @@ async function generateSimple(){
   const cb=sketchCombos();
   let K=SKETCH.kitchen.filter(p=>p.len>0&&p.depth>0);
   if(cb&&SKETCH.combo>=0&&cb[SKETCH.combo])K=cb[SKETCH.combo].pieces;
-  const C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
-  if(!K.length&&!C.length){alert("נא להשלים לפחות חתיכה אחת עם אורך ועומק");return;}
+  let C=SKETCH.cladding.filter(p=>p.len>0&&p.depth>0);
+  const rem=remChosen(),remK=new Set(rem.map(h=>h.kind+"/"+h.key.split(":")[0].slice(1)));
+  if(rem.length){K=K.filter((p,i)=>!remK.has("k/"+i));C=C.filter((p,i)=>!remK.has("c/"+i));}
+  if(!K.length&&!C.length&&!rem.length){alert("נא להשלים לפחות חתיכה אחת עם אורך ועומק");return;}
   const out=document.getElementById("out");out.innerHTML="";const c=document.createElement("div");out.appendChild(c);
+  if(rem.length){const rb=document.createElement("div");out.appendChild(rb);remRun(rb);
+    if(!K.length&&!C.length){c.innerHTML='<div class="combo"><h3>כל החתיכות נחתכות משאריות</h3><div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>';return;}}
   c.innerHTML='<div class="combo"><h3>יוצר תוכנית חיתוך…</h3><div class="meta">בפעם הראשונה זה עלול לקחת עד דקה.</div></div>';
   try{
-    const res=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({pieces:expandQty(K).map(p=>({...p,edges:p.edges||{}})),cladding:expandQty(C).map(p=>({...p,edges:p.edges||{}})),material:MAT,...slabQ(),job_name:SKETCH.job||""})});
+    const payload={pieces:expandQty(K).map(p=>({...p,edges:p.edges||{}})),cladding:expandQty(C).map(p=>({...p,edges:p.edges||{}})),material:MAT,...slabQ(),job_name:SKETCH.job||""};
+    const res=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
     const j=await res.json();
+    LAST_PLAN=j.ok?{payload,layout:j.layout,mat:MAT,L:j.slabL||payload.slabL,W:j.slabW||payload.slabW}:null;
     if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
     const mat=MATERIALS[MAT];
     c.innerHTML=`<div class="combo"><h3>התוכנית מוכנה ✓</h3>
@@ -1422,16 +1563,20 @@ async function generateSimple(){
         <button class="btn" style="flex:2" id="spdf">הורד תוכנית חיתוך (PDF) ↓</button>
         <button class="btn ghost" style="flex:1" id="sdxf">הורד DXF למכונה ↓</button>
       </div>
+      <div class="row" style="margin-top:8px">${machineBtn("smach")}</div>${machineHint()}
       <div class="row" style="margin-top:8px">
         <button class="btn ghost" style="flex:1" onclick="askSaveRemnants()">💾 שמור שאריות למלאי</button>
         <button class="btn ghost" style="flex:1" onclick="invExport()">📊 ייצוא מלאי לאקסל</button>
       </div>
       <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="shareJob()">↗ שתף תוכנית</button></div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="photoStart()">📷 הנחה על צילום הלוח האמיתי</button></div>
       <div id="invBox"></div><div id="shareBox"></div>
-      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>`;
+      <div class="row" style="margin-top:8px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכת המידות</button></div></div>
+      <div id="photoBox"></div>`;
     LAST_REMNANTS=j.remnants||[]; LAST_FILES={pdf:j.pdf,dxf:j.dxf};
     document.getElementById("spdf").onclick=()=>dlB64("cutting_plan.pdf",j.pdf,"application/pdf");
     document.getElementById("sdxf").onclick=()=>{if(dxfGuard(j.check)){download("cut_"+MAT+".dxf",j.dxf);prodLog(j.check,SKETCH.job||"",j.dxf);}};
+    document.getElementById("smach").onclick=e=>sendToMachine(e.currentTarget,j.dxf,j.check,SKETCH.job||"",MAT);
   }catch(e){ c.innerHTML='<div class="combo"><h3>שגיאה</h3><div class="man">'+e.message+'</div><div class="row" style="margin-top:10px"><button class="btn ghost" style="flex:1" onclick="renderSketchTable()">← חזרה לעריכה</button></div></div>'; }
 }
 
@@ -1509,5 +1654,158 @@ function profImport(inp){
     slabApply();renderProfile("נטענו "+keys.length+" הגדרות ונתונים מהקובץ ✓");
   };
   rd.readAsText(f);
+}
+
+/* ===== צילום הלוח האמיתי: מיישרים את התמונה לפי ארבע הפינות, מניחים עליה את החתיכות, ומזיזים כדי לתפוס עורק יפה או להתחמק מסדק ===== */
+let LAST_PLAN=null, PH=null;
+const PH_S=3;   // פיקסלים לס"מ בתמונה המיושרת
+const PH_CORNERS=["פינה 1: הפינה שעומדת בנקודת האפס של המכונה (בתוכנית היא למטה משמאל)","פינה 2: הפינה השנייה לאורך הצלע הארוכה","פינה 3: הפינה שמולה, בצד השני של הרוחב","פינה 4: הפינה האחרונה"];
+function photoStart(){
+  const P=LAST_PLAN;
+  if(!P||!P.layout){alert("המנוע עוד לא מעודכן לסידור על צילום הלוח.");return;}
+  const all=P.payload.pieces.concat(P.payload.cladding||[]);
+  PH={payload:P.payload,mat:P.mat,L:P.L,W:P.W,all,cur:0,sel:null,drag:null,
+    slabs:P.layout.map(row=>({img:null,warp:null,corners:[],items:row.map(it=>({i:it.i,x:it.x,y:it.y,rot:!!it.rot}))}))};
+  photoRender();
+  document.getElementById("photoBox").scrollIntoView({behavior:"smooth",block:"start"});
+}
+function phDims(it){const p=PH.all[it.i];return it.rot?[+p.depth,+p.len]:[+p.len,+p.depth];}
+function phProblems(sl){
+  const E=0.05,out=new Set(),bad=[];
+  sl.items.forEach((a,k)=>{const [l,d]=phDims(a);
+    if(a.x<-E||a.y<-E||a.x+l>PH.L+E||a.y+d>PH.W+E){out.add(k);bad.push("חתיכה "+(a.i+1)+" יוצאת מהלוח");}
+    sl.items.forEach((b,m)=>{if(m<=k)return;const [l2,d2]=phDims(b);
+      if(a.x<b.x+l2-E&&b.x<a.x+l-E&&a.y<b.y+d2-E&&b.y<a.y+d-E){out.add(k);out.add(m);bad.push("חתיכות "+(a.i+1)+" ו־"+(b.i+1)+" חופפות");}});});
+  return {out,bad};
+}
+function photoRender(){
+  const box=document.getElementById("photoBox");if(!box||!PH)return;
+  const sl=PH.slabs[PH.cur],picking=sl.img&&sl.corners.length<4;
+  const allBad=PH.slabs.reduce((n,s)=>n+phProblems(s).bad.length,0);
+  box.innerHTML=`<div class="combo"><h3>הנחה על צילום הלוח</h3>
+    <div class="meta">מצלמים את הלוח מלמעלה, מסמנים את ארבע הפינות, והתמונה מתיישרת לפי מידות הלוח ${PH.L}×${PH.W}. גוררים חתיכה כדי לתפוס עורק יפה או להתחמק מסדק.</div>
+    <div class="row" style="margin-top:10px">${PH.slabs.map((s,k)=>`<span onclick="PH.cur=${k};PH.sel=null;photoRender()" style="cursor:pointer;padding:6px 14px;border-radius:20px;border:1.5px solid ${k===PH.cur?"var(--amber)":"var(--line)"};font-size:13px">לוח ${k+1}${s.warp?" 📷":""}</span>`).join("")}</div>
+    <label class="btn ghost" style="display:block;text-align:center;margin-top:10px">📷 ${sl.img?"צילום אחר ללוח "+(PH.cur+1):"צלם את לוח "+(PH.cur+1)}
+      <input type="file" accept="image/*" capture="environment" style="display:none" onchange="photoPick(this)"></label>
+    ${picking?`<div class="chk" style="margin-top:8px"><b>הקש על ${PH_CORNERS[sl.corners.length]}</b></div>`:""}
+    ${sl.img&&!picking?`<div class="note"><span style="cursor:pointer;color:var(--amber)" onclick="PH.slabs[PH.cur].corners=[];PH.slabs[PH.cur].warp=null;photoRender()">סימון הפינות מחדש</span></div>`:""}
+    <canvas id="phCv" style="margin-top:10px;touch-action:none;background:#2b3038"></canvas>
+    <div id="phSel"></div><div id="phBad"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" style="flex:2" onclick="photoPlan()">צור תוכנית ו־DXF לפי הסידור הזה</button>
+      <button class="btn ghost" style="flex:1" onclick="photoSave()">שמור תמונה להצגה ללקוח</button></div>
+    ${allBad?`<div class="note">יש ${allBad} בעיות בסידור. אפשר ליצור קובץ רק אחרי שמתקנים אותן.</div>`:""}
+    <div id="phOut"></div></div>`;
+  const cv=document.getElementById("phCv");
+  cv.onpointerdown=phDown;cv.onpointermove=phMove;cv.onpointerup=cv.onpointercancel=()=>{if(PH.drag){PH.drag=null;photoRender();}};
+  photoDraw();
+}
+function photoPick(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;
+  const im=new Image();
+  im.onload=()=>{const sc=Math.min(1,2000/Math.max(im.width,im.height)),c=document.createElement("canvas");
+    c.width=Math.round(im.width*sc);c.height=Math.round(im.height*sc);c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+    const sl=PH.slabs[PH.cur];sl.img=c;sl.corners=[];sl.warp=null;URL.revokeObjectURL(im.src);photoRender();};
+  im.onerror=()=>alert("הקובץ שנבחר אינו תמונה שאפשר לקרוא.");
+  im.src=URL.createObjectURL(f);
+}
+/* מטריצת הומוגרפיה שממפה ארבע נקודות src לארבע נקודות dst */
+function homog(src,dst){
+  const A=[],b=[];
+  for(let k=0;k<4;k++){const [x,y]=src[k],[u,v]=dst[k];
+    A.push([x,y,1,0,0,0,-u*x,-u*y]);b.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);b.push(v);}
+  for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;
+    [A[c],A[p]]=[A[p],A[c]];[b[c],b[p]]=[b[p],b[c]];
+    if(Math.abs(A[c][c])<1e-12)return null;
+    for(let r=0;r<8;r++){if(r===c)continue;const f=A[r][c]/A[c][c];for(let k=c;k<8;k++)A[r][k]-=f*A[c][k];b[r]-=f*b[c];}}
+  const h=b.map((v,c)=>v/A[c][c]);return [...h,1];
+}
+function photoWarp(sl){
+  const L=PH.L,W=PH.W,ow=Math.round(L*PH_S),oh=Math.round(W*PH_S);
+  // נקודות הלוח בס"מ, y למעלה כמו בתוכנית ובמכונה
+  const H=homog([[0,0],[L,0],[L,W],[0,W]],sl.corners);
+  if(!H){alert("הפינות שסומנו לא יוצרות מרובע. נסה לסמן שוב.");sl.corners=[];return;}
+  const src=sl.img.getContext("2d").getImageData(0,0,sl.img.width,sl.img.height),sw=sl.img.width,sh=sl.img.height;
+  const out=document.createElement("canvas");out.width=ow;out.height=oh;
+  const g=out.getContext("2d"),dst=g.createImageData(ow,oh);
+  for(let py=0;py<oh;py++){const y=W-(py+0.5)/PH_S;
+    for(let px=0;px<ow;px++){const x=(px+0.5)/PH_S,w=H[6]*x+H[7]*y+1;
+      const u=Math.round((H[0]*x+H[1]*y+H[2])/w),v=Math.round((H[3]*x+H[4]*y+H[5])/w),o=(py*ow+px)*4;
+      if(u>=0&&v>=0&&u<sw&&v<sh){const s=(v*sw+u)*4;dst.data[o]=src.data[s];dst.data[o+1]=src.data[s+1];dst.data[o+2]=src.data[s+2];}
+      dst.data[o+3]=255;}}
+  g.putImageData(dst,0,0);sl.warp=out;
+}
+function photoDraw(){
+  const cv=document.getElementById("phCv");if(!cv)return;
+  const sl=PH.slabs[PH.cur],g=cv.getContext("2d");
+  if(sl.img&&sl.corners.length<4){   // שלב סימון הפינות: התמונה המקורית
+    cv.width=sl.img.width;cv.height=sl.img.height;g.drawImage(sl.img,0,0);g.direction="ltr";g.textAlign="left";
+    const r=Math.max(8,sl.img.width/90);
+    sl.corners.forEach(([x,y],k)=>{g.fillStyle="#1f6feb";g.beginPath();g.arc(x,y,r,0,7);g.fill();
+      g.fillStyle="#fff";g.font="bold "+Math.round(r*1.6)+"px Arial";g.fillText(String(k+1),x+r*1.3,y-r*1.3);});
+    if(sl.corners.length>1){g.strokeStyle="#1f6feb";g.lineWidth=r/3;g.beginPath();sl.corners.forEach(([x,y],k)=>k?g.lineTo(x,y):g.moveTo(x,y));g.stroke();}
+    return;
+  }
+  const S=PH_S;cv.width=Math.round(PH.L*S);cv.height=Math.round(PH.W*S);
+  g.direction="ltr";g.textAlign="left";   // הדף מימין לשמאל, והקנבס יורש את זה. המידות נכתבות משמאל לימין
+  if(sl.warp)g.drawImage(sl.warp,0,0);else{g.fillStyle="#d9dde3";g.fillRect(0,0,cv.width,cv.height);}
+  g.strokeStyle="#111820";g.lineWidth=2;g.strokeRect(1,1,cv.width-2,cv.height-2);
+  const {out,bad}=phProblems(sl);
+  sl.items.forEach((it,k)=>{const [l,d]=phDims(it),X=it.x*S,Y=(PH.W-it.y-d)*S,p=PH.all[it.i];
+    const red=out.has(k),sel=PH.sel===k;
+    g.fillStyle=red?"rgba(220,40,40,.28)":(sel?"rgba(31,111,235,.28)":"rgba(255,255,255,.16)");g.fillRect(X,Y,l*S,d*S);
+    g.strokeStyle=red?"#e02424":(sel?"#1f6feb":"#111820");g.lineWidth=sel?4:3;g.strokeRect(X,Y,l*S,d*S);
+    g.setLineDash([6,4]);g.lineWidth=2;
+    (p.openings||[]).forEach(o=>{if(!o.w||!o.h)return;   // הפתחים, כדי לראות איפה יוצא הכיור על העורק
+      const ox=+o.from_left_cm||0,oy=(o.from_front_cm!=null&&o.from_front_cm!=="")?+o.from_front_cm:+p.depth/2;
+      const cx=it.rot?it.x+(+p.depth-oy):it.x+ox,cy=it.rot?it.y+ox:it.y+oy,w=it.rot?+o.h:+o.w,h=it.rot?+o.w:+o.h;
+      g.strokeRect((cx-w/2)*S,(PH.W-cy-h/2)*S,w*S,h*S);});
+    g.setLineDash([]);
+    // המספר כמו בתוכנית, ובחתיכה רחבה מספיק גם המידות. גודל הכתב לפי רוחב הלוח, כדי שיהיה קריא בטלפון
+    const fs=Math.round(cv.width/34),full="#"+(it.i+1)+"  "+l+"×"+d;g.font="bold "+fs+"px Arial";
+    const t=g.measureText(full).width+fs<l*S?full:"#"+(it.i+1),tw=g.measureText(t).width;
+    g.fillStyle="rgba(17,24,32,.78)";g.fillRect(X+4,Y+4,tw+fs*0.6,fs*1.4);g.fillStyle="#fff";g.fillText(t,X+4+fs*0.3,Y+4+fs*1.05);});
+  const ss=document.getElementById("phSel");
+  if(ss)ss.innerHTML=PH.sel!=null&&sl.items[PH.sel]?`<div class="row" style="margin-top:8px"><span style="flex:1;font-size:13px">חתיכה ${sl.items[PH.sel].i+1} נבחרה · <span dir="ltr">${(()=>{const [l,d]=phDims(sl.items[PH.sel]);return l+"×"+d;})()}</span></span>
+    <button class="btn ghost" style="flex:1" onclick="phRotate()">סובב 90°</button></div>`:`<div class="note">${sl.items.length?"נוגעים בחתיכה כדי לבחור ולגרור אותה.":"אין חתיכות על הלוח הזה."}</div>`;
+  const bb=document.getElementById("phBad");if(bb)bb.innerHTML=bad.length?`<div class="chk bad">${bad.map(x=>"• "+x).join("<br>")}</div>`:"";
+}
+function phPt(e){const cv=e.currentTarget,r=cv.getBoundingClientRect();return [(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height];}
+function phDown(e){
+  const sl=PH.slabs[PH.cur],[px,py]=phPt(e);
+  if(sl.img&&sl.corners.length<4){sl.corners.push([px,py]);if(sl.corners.length===4)photoWarp(sl);photoRender();return;}
+  const x=px/PH_S,y=PH.W-py/PH_S;let hit=null;
+  sl.items.forEach((it,k)=>{const [l,d]=phDims(it);if(x>=it.x&&x<=it.x+l&&y>=it.y&&y<=it.y+d)hit=k;});
+  PH.sel=hit;
+  if(hit!=null){const it=sl.items[hit];PH.drag={dx:x-it.x,dy:y-it.y};e.currentTarget.setPointerCapture(e.pointerId);}
+  photoDraw();
+}
+function phMove(e){
+  if(!PH.drag||PH.sel==null)return;
+  const sl=PH.slabs[PH.cur],it=sl.items[PH.sel],[px,py]=phPt(e),snap=v=>Math.round(v*2)/2;
+  it.x=snap(px/PH_S-PH.drag.dx);it.y=snap(PH.W-py/PH_S-PH.drag.dy);photoDraw();
+}
+function phRotate(){const it=PH.slabs[PH.cur].items[PH.sel];if(!it)return;it.rot=!it.rot;photoDraw();photoRender();}
+function photoSave(){
+  const cv=document.getElementById("phCv");if(!cv)return;
+  const keep=PH.sel;PH.sel=null;photoDraw();
+  cv.toBlob(b=>{saveFile("slab_"+(PH.cur+1)+".png",b);PH.sel=keep;photoDraw();},"image/png");
+}
+async function photoPlan(){
+  const bad=PH.slabs.reduce((n,s)=>n+phProblems(s).bad.length,0);
+  if(bad){alert("יש בעיות בסידור (חתיכות חופפות או יוצאות מהלוח). מתקנים אותן לפני שיוצרים קובץ.");return;}
+  const placements=[];
+  PH.slabs.forEach((s,si)=>s.items.forEach(it=>{placements[it.i]={slab:si,x:it.x,y:it.y,rot:it.rot};}));
+  const o=document.getElementById("phOut");o.innerHTML='<div class="meta" style="margin-top:10px">יוצר תוכנית וקובץ לפי הסידור שלך…</div>';
+  try{
+    const j=await fetch(ENGINE+"/api/pieces",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...PH.payload,placements})}).then(r=>r.json());
+    if(!j.ok)throw new Error(j.error||"שגיאת מנוע");
+    PH.res=j;
+    o.innerHTML=`<div class="info" style="margin-top:12px"><b>התוכנית לפי הסידור שלך מוכנה</b>${checkHtml(j.check)}
+      <div class="row" style="margin-top:10px">
+        <button class="btn" style="flex:2" onclick="dlB64('cutting_plan_photo.pdf',PH.res.pdf,'application/pdf')">הורד תוכנית חיתוך (PDF) ↓</button>
+        <button class="btn ghost" style="flex:1" onclick="if(dxfGuard(PH.res.check)){download('cut_photo_'+PH.mat+'.dxf',PH.res.dxf);prodLog(PH.res.check,PH.payload.job_name||'',PH.res.dxf,PH.mat);}">הורד DXF ↓</button></div>
+      <div class="row" style="margin-top:8px"><button class="btn" style="flex:1" onclick="sendToMachine(this,PH.res.dxf,PH.res.check,PH.payload.job_name||'',PH.mat)">📤 שלח למכונה</button></div>${machineHint()}</div>`;
+  }catch(e){o.innerHTML='<div class="man" style="margin-top:10px">'+e.message+'</div>';}
 }
 </script></body></html>
